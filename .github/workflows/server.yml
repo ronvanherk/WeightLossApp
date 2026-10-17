@@ -1,0 +1,64 @@
+name: server
+
+on:
+  push:
+    branches: [main]
+    paths: ["server/**", ".github/workflows/server.yml"]
+  pull_request:
+    paths: ["server/**", ".github/workflows/server.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: server/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: server/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prisma generate
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+
+  image:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: server
+          push: true
+          tags: ghcr.io/ronvanherk/weightlossapp:main
+
+  # Off until the droplet side exists: set the repository variable DEPLOY_ENABLED=true and the
+  # secrets DEPLOY_SSH_KEY, DROPLET_HOST, DROPLET_USER (same pattern as router-web).
+  deploy:
+    needs: image
+    if: github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+      - run: |
+          ssh -o StrictHostKeyChecking=accept-new ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }} \
+            'cd /opt/weightloss && docker compose pull web && docker compose up -d'
