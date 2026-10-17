@@ -19,6 +19,16 @@ describe("offToFood", () => {
     expect(offToFood({ code: "1", product_name: "x", nutriments: { energy_100g: 418.4 } })?.kcal).toBe(100);
   });
 
+  it("reads the newer nutrition.aggregated_set format", () => {
+    const f = offToFood({
+      code: "1",
+      product_name: "Himalaya Salz",
+      nutriments: { "nova-group_100g": 2 },
+      nutrition: { aggregated_set: { per: "100g", nutrients: { "energy-kcal": { value: 361 }, proteins: { value: 85.5 }, fat: { value: 1 } } } },
+    });
+    expect(f).toMatchObject({ kcal: 361, protein: 85.5, fat: 1 });
+  });
+
   it("drops products without energy, without a name, or with impossible values", () => {
     expect(offToFood({ code: "1", product_name: "x", nutriments: {} })).toBeNull();
     expect(offToFood({ code: "1", nutriments: { "energy-kcal_100g": 50 } })).toBeNull();

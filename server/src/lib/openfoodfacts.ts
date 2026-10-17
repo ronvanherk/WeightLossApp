@@ -14,6 +14,8 @@ export interface OffProduct {
   countries_tags?: string[];
   serving_quantity?: number | string;
   nutriments?: Record<string, number | string | undefined>;
+  /** Newer format (2026 dumps): `nutriments` is nearly empty and the values live here. */
+  nutrition?: { aggregated_set?: { per?: string; nutrients?: Record<string, { value?: number | string }> } };
 }
 
 function num(v: unknown): number | null {
@@ -23,11 +25,21 @@ function num(v: unknown): number | null {
 
 const clean = (s?: string) => (s && s.trim() ? s.trim() : null);
 
+/** Per-100 g values in the old `<name>_100g` shape, taken from whichever format the product uses. */
+function per100(p: OffProduct): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...p.nutriments };
+  const set = p.nutrition?.aggregated_set;
+  if (set?.nutrients && (set.per === "100g" || set.per === "100ml")) {
+    for (const [name, v] of Object.entries(set.nutrients)) out[`${name}_100g`] ??= v?.value;
+  }
+  return out;
+}
+
 /** Maps an Open Food Facts product to a food row, or null when it lacks a name or energy value. */
 export function offToFood(p: OffProduct): FoodRow | null {
   const code = clean(p.code);
   if (!code) return null;
-  const n = p.nutriments ?? {};
+  const n = per100(p);
   const kj = num(n["energy-kj_100g"]) ?? num(n["energy_100g"]);
   const kcal = num(n["energy-kcal_100g"]) ?? (kj !== null ? kj / 4.184 : null);
   // Anything above pure fat (900 kcal/100 g) is a data-entry error.
@@ -55,7 +67,7 @@ export function offToFood(p: OffProduct): FoodRow | null {
   return row;
 }
 
-const FIELDS = "code,product_name,product_name_nl,product_name_da,product_name_de,product_name_en,brands,serving_quantity,nutriments";
+const FIELDS = "code,product_name,product_name_nl,product_name_da,product_name_de,product_name_en,brands,serving_quantity,nutriments,nutrition";
 
 /** Live lookup for a barcode the import does not have (yet). */
 export async function fetchOffProduct(barcode: string): Promise<FoodRow | null> {
