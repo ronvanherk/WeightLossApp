@@ -119,6 +119,10 @@ Runs on the general web server **`192.168.68.149`** (Ubuntu 24.04, public `95.15
   DNS for quantumvikings.com is at Cloudflare: an A record `food` -> `95.154.21.210`, DNS only.
 - Update: `ssh ron@192.168.68.149 'cd /opt/weightloss && git pull && cd server && sudo docker compose -p weightloss up -d --build'`.
 - The CI `deploy` job (droplet + GHCR) is unused; the server sits behind NAT on the LAN.
+- Scripts (`user:create`, imports) are not in the runtime image; run them from the checkout in a
+  throwaway container on the host network (DB at `127.0.0.1:5434`, password from `.env`):
+  `sudo docker run --rm --network host -v "$PWD":/app -w /app -e DATABASE_URL=... node:22-alpine sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm exec prisma generate && pnpm user:create ..."`
+  Accounts exist for Ron (id 1) and Cindy (id 2) since 2026-10-17; TLS by certbot the same day.
 - Disk: ~29 GB free on 2026-10-17; the OFF import needs a few GB for three countries.
 
 ## Privacy
@@ -131,7 +135,7 @@ Postgres stays on loopback.
 ## Next
 
 1. Install the CI-built APK on both phones (needs the server deployed to log in).
-2. Import NEVO + OFF, create both accounts (server is deployed, see above).
+2. Import NEVO + OFF (server and both accounts exist, see above).
 3. Frida and BLS importers (Danish and German basics, with names in those languages).
 4. Weight chart, editing a portion from the diary, recent/favourite foods for fast logging.
 5. Water, a fasting timer, then Health Connect (steps/activity -> TDEE adjustment).
