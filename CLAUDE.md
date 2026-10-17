@@ -95,10 +95,12 @@ portion dialog, weight log, profile.
 - UI strings are Dutch and inline for now; move to `strings.xml` (+ `values-da`, `values-de`)
   if Cindy or anyone else wants another language. The food-name language is separate and
   already per user (`profile.locale`).
-- **Never compiled yet.** The first version was written in a cloud session without access to
-  Google's Maven or the Android SDK. Expect a round of small fixes on the first
-  `./gradlew :app:assembleDebug`. Library versions are deliberately conservative (AGP 8.7.3,
-  Kotlin 2.1.0, Compose BOM 2024.12.01); let Android Studio upgrade them once it builds.
+- **Built by CI**, not locally: `.github/workflows/android.yml` runs
+  `./gradlew :app:assembleDebug` on every push touching `android/` and attaches
+  `weightloss-debug-apk` (30 days) to the run. Cloud sessions cannot reach Google's Maven or
+  the Android SDK, so this is how they compile; read the job log for errors. First build green
+  on 2026-10-17 without changes. Library versions are deliberately conservative (AGP 8.7.3,
+  Kotlin 2.1.0, Compose BOM 2024.12.01); upgrade them in one go, not piecemeal.
 - When installing, always pass `adb -s <serial>`; a TV box on the LAN also shows up.
 
 ## Deployment (planned, not done)
@@ -124,7 +126,7 @@ Postgres stays on loopback.
 
 ## Next
 
-1. First Android build + fixes; install on both phones.
+1. Install the CI-built APK on both phones (needs the server deployed to log in).
 2. Deploy the server (steps above), import NEVO + OFF, create both accounts.
 3. Frida and BLS importers (Danish and German basics, with names in those languages).
 4. Weight chart, editing a portion from the diary, recent/favourite foods for fast logging.
