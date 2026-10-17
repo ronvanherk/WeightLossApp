@@ -103,19 +103,23 @@ portion dialog, weight log, profile.
   Kotlin 2.1.0, Compose BOM 2024.12.01); upgrade them in one go, not piecemeal.
 - When installing, always pass `adb -s <serial>`; a TV box on the LAN also shows up.
 
-## Deployment (planned, not done)
+## Deployment
 
-Same pattern as router-web, on the same droplet (`68.183.105.38`):
+Runs on the general web server **`192.168.68.149`** (Ubuntu 24.04, public `95.154.21.210`,
+`ssh ron@192.168.68.149`, passwordless sudo), not on the droplet. Live since 2026-10-17.
 
-1. `/opt/weightloss/` with `server/docker-compose.yml` and a `.env` holding
-   `POSTGRES_PASSWORD` and `AUTH_SECRET`. Web binds `127.0.0.1:3002` (router-web has 3001),
-   Postgres `127.0.0.1:5434`, which is reachable for imports via `ssh -L 5434:127.0.0.1:5434`.
-2. The droplet must `docker login ghcr.io` to pull the private image.
-3. Caddy: `food.quantumvikings.com { reverse_proxy 127.0.0.1:3002 }` plus a DNS record.
-   (The name is a proposal; change it in Caddy and in `android/app/build.gradle.kts`.)
-4. CI deploys only when the repository variable `DEPLOY_ENABLED=true` is set and the secrets
-   `DEPLOY_SSH_KEY`, `DROPLET_HOST`, `DROPLET_USER` exist.
-5. Check free disk on the droplet before the OFF import (a few GB for three countries).
+- `/opt/weightloss` is a git checkout of this (public) repo; the stack is `server/docker-compose.yml`,
+  project name `weightloss`, secrets in `server/.env` (mode 600, `POSTGRES_PASSWORD`,
+  `AUTH_SECRET`, `OFF_USER_AGENT`). The image is **built on the server** (`network: host`, the
+  daemon's DNS is unreachable from build containers), not pulled from GHCR.
+- Ports: web `127.0.0.1:3020` (3002 there belongs to the Amazing gateway), Postgres
+  `127.0.0.1:5434`, for imports via `ssh -L 5434:127.0.0.1:5434 ron@192.168.68.149`.
+- nginx vhost `/etc/nginx/sites-available/food.quantumvikings.com.conf` (symlinked into
+  `sites-enabled`), proxy to 3020; TLS via `certbot --nginx` like the other vhosts.
+  DNS for quantumvikings.com is at Cloudflare: an A record `food` -> `95.154.21.210`, DNS only.
+- Update: `ssh ron@192.168.68.149 'cd /opt/weightloss && git pull && cd server && sudo docker compose -p weightloss up -d --build'`.
+- The CI `deploy` job (droplet + GHCR) is unused; the server sits behind NAT on the LAN.
+- Disk: ~29 GB free on 2026-10-17; the OFF import needs a few GB for three countries.
 
 ## Privacy
 
@@ -127,7 +131,7 @@ Postgres stays on loopback.
 ## Next
 
 1. Install the CI-built APK on both phones (needs the server deployed to log in).
-2. Deploy the server (steps above), import NEVO + OFF, create both accounts.
+2. Import NEVO + OFF, create both accounts (server is deployed, see above).
 3. Frida and BLS importers (Danish and German basics, with names in those languages).
 4. Weight chart, editing a portion from the diary, recent/favourite foods for fast logging.
 5. Water, a fasting timer, then Health Connect (steps/activity -> TDEE adjustment).
