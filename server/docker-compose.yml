@@ -1,4 +1,5 @@
-# Production stack on the droplet, in /opt/weightloss. Caddy proxies the public name to 127.0.0.1:3002.
+# Production stack on the web server (192.168.68.149), in /opt/weightloss/server. nginx proxies
+# food.quantumvikings.com to 127.0.0.1:3020 (3002 is taken there by another app).
 services:
   db:
     image: postgres:16-alpine
@@ -18,7 +19,12 @@ services:
       retries: 10
 
   web:
-    image: ghcr.io/ronvanherk/weightlossapp:main
+    build:
+      context: .
+      # The server's Docker daemon inherits a DNS server that containers cannot reach; build on
+      # the host network so pnpm/apk resolve through the host.
+      network: host
+    image: weightloss-web:latest
     restart: unless-stopped
     depends_on:
       db:
@@ -28,7 +34,7 @@ services:
       AUTH_SECRET: ${AUTH_SECRET:?set in .env}
       OFF_USER_AGENT: ${OFF_USER_AGENT:-WeightLossApp/0.1}
     ports:
-      - "127.0.0.1:3002:3002"
+      - "127.0.0.1:3020:3002"
 
 volumes:
   db:
