@@ -53,7 +53,7 @@ is a re-runnable upsert (`upsertFoods()`, one SQL statement per 1000 rows).
 | Source | Country | Status |
 |---|---|---|
 | NEVO (RIVM) | NL | importer done: `pnpm import:nevo <csv>`; finds columns by header |
-| Open Food Facts | NL/DK/DE branded | importer done: `pnpm import:off <jsonl.gz>`; plus live barcode lookup |
+| Open Food Facts | NL/DK/DE branded | **imported 2026-10-18** (321k); `pnpm import:off <jsonl.gz>`; plus live barcode lookup |
 | Frida (DTU Fødevareinstituttet) | DK | **todo** |
 | BLS (Max Rubner-Institut) | DE | **todo**; check the current licence first (older releases were paid) |
 
@@ -64,6 +64,11 @@ is a re-runnable upsert (`upsertFoods()`, one SQL statement per 1000 rows).
   (~7 GB). The importer streams it and keeps `countries_tags` containing NL/DK/DE. A barcode
   not in the table is fetched live from the OFF API and cached as an `OFF` row. The OFF data is
   ODbL: fine for private use; if this ever ships to others, the OFF-derived part must stay ODbL.
+- **OFF changed its format in 2025/26:** in the dump `nutriments` is nearly empty and the values
+  sit in `nutrition.aggregated_set.nutrients.<name>.value` (per `100g`/`100ml`). `offToFood` reads
+  both. First full import 2026-10-18: 321,377 of 4.8 M products kept (names: 199k de, 41k nl,
+  12k da), DB 159 MB, ~30 min on the web server. The dump is now **13 GB**, not 7; it was
+  deleted afterwards (server disk 84%). Re-run with `/opt/weightloss-data/import-off.sh` in tmux.
 - Plausibility: OFF products without a name, without energy, or above 900 kcal/100 g are
   dropped. kJ-only products are converted (/ 4.184).
 - Upserts consume sequence values on conflict, so food ids have gaps. Harmless.
@@ -135,7 +140,7 @@ Postgres stays on loopback.
 ## Next
 
 1. Install the CI-built APK on both phones (needs the server deployed to log in).
-2. Import NEVO + OFF (server and both accounts exist, see above).
+2. Import NEVO (OFF is in, server and both accounts exist, see above).
 3. Frida and BLS importers (Danish and German basics, with names in those languages).
 4. Weight chart, editing a portion from the diary, recent/favourite foods for fast logging.
 5. Water, a fasting timer, then Health Connect (steps/activity -> TDEE adjustment).
