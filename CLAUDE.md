@@ -120,6 +120,16 @@ calorie and water bars, history); profile (target card, date picker). Shared pie
   the Android SDK, so this is how they compile; read the job log for errors. First build green
   on 2026-10-17 without changes. Library versions are deliberately conservative (AGP 8.7.3,
   Kotlin 2.1.0, Compose BOM 2024.12.01); upgrade them in one go, not piecemeal.
+- **Google Play closed testing** (set up 2026-10-18). CI builds `bundleRelease` on every push,
+  signed with the upload key (secrets `UPLOAD_KEYSTORE_BASE64`, `UPLOAD_KEYSTORE_PASSWORD`; the
+  key itself and its password are in `~/Documents/WeightLossApp-keys/`, outside the repo),
+  versionCode = run number + 100, versionName `0.2.<code>`, artifact `weightloss-release-aab`.
+  Upload to the `alpha` (closed testing) track is gated on variable `PLAY_UPLOAD_ENABLED=true`
+  plus secret `PLAY_SERVICE_ACCOUNT_JSON`. Target SDK 36 (Play minimum since 2026-08-31) on
+  AGP 8.7 with `android.suppressUnsupportedCompileSdk=36`. Privacy policy:
+  https://food.quantumvikings.com/privacy (`server/src/app/privacy/page.tsx`).
+- Debug builds are `com.quantumvikings.weightloss.debug` ("WeightLoss dev"), signed with the
+  committed `app/debug.keystore`, so they install next to the Play version and over each other.
 - When installing, always pass `adb -s <serial>`; a TV box on the LAN also shows up.
 
 ## Deployment
