@@ -22,10 +22,23 @@ export interface FoodRow {
   sugar?: number | null;
   salt?: number | null;
   servingG?: number | null;
+  saturatedFat?: number | null;
+  unit?: "g" | "ml";
+  category?: string | null;
+  nutrients?: Record<string, number> | null;
+  details?: FoodDetails | null;
 }
 
-export function searchText(f: Pick<FoodRow, "nameNl" | "nameDa" | "nameDe" | "nameEn" | "brand">): string {
-  return [f.brand, f.nameNl, f.nameDa, f.nameDe, f.nameEn]
+/** Extras a source knows about a food; shown on the detail screen, synonyms also searched. */
+export interface FoodDetails {
+  synonyms?: string[];
+  remark?: string;
+  traces?: string;
+  fortified?: string;
+}
+
+export function searchText(f: Pick<FoodRow, "nameNl" | "nameDa" | "nameDe" | "nameEn" | "brand" | "details">): string {
+  return [f.brand, f.nameNl, f.nameDa, f.nameDe, f.nameEn, ...(f.details?.synonyms ?? [])]
     .filter(Boolean)
     .join(" ")
     .toLowerCase()
@@ -47,8 +60,19 @@ export function toApi(f: Food, locale: string) {
     name: displayName(f, locale),
     names: { nl: f.nameNl, da: f.nameDa, de: f.nameDe, en: f.nameEn },
     brand: f.brand,
-    per100g: { kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, fiber: f.fiber, sugar: f.sugar, salt: f.salt },
+    per100g: {
+      kcal: f.kcal,
+      protein: f.protein,
+      carbs: f.carbs,
+      fat: f.fat,
+      saturatedFat: f.saturatedFat,
+      fiber: f.fiber,
+      sugar: f.sugar,
+      salt: f.salt,
+    },
     servingG: f.servingG,
+    unit: f.unit,
+    category: f.category,
   };
 }
 
@@ -72,23 +96,33 @@ export async function upsertFoods(rows: FoodRow[]): Promise<number> {
     sugar: r.sugar ?? null,
     salt: r.salt ?? null,
     serving_g: r.servingG ?? null,
+    saturated_fat: r.saturatedFat ?? null,
+    unit: r.unit ?? "g",
+    category: r.category ?? null,
+    nutrients: r.nutrients ?? null,
+    details: r.details ?? null,
     search_text: searchText(r),
   }));
   return db.$executeRaw`
     INSERT INTO food (source, source_id, barcode, name_nl, name_da, name_de, name_en, brand,
-                      kcal, protein, carbs, fat, fiber, sugar, salt, serving_g, search_text, updated_at)
+                      kcal, protein, carbs, fat, fiber, sugar, salt, serving_g, saturated_fat, unit,
+                      category, nutrients, details, search_text, updated_at)
     SELECT source::"FoodSource", source_id, barcode, name_nl, name_da, name_de, name_en, brand,
-           kcal, protein, carbs, fat, fiber, sugar, salt, serving_g, search_text, now()
+           kcal, protein, carbs, fat, fiber, sugar, salt, serving_g, saturated_fat, unit,
+           category, nutrients, details, search_text, now()
     FROM jsonb_to_recordset(${JSON.stringify(records)}::jsonb) AS r(
       source text, source_id text, barcode text, name_nl text, name_da text, name_de text, name_en text,
       brand text, kcal float8, protein float8, carbs float8, fat float8, fiber float8, sugar float8,
-      salt float8, serving_g float8, search_text text)
+      salt float8, serving_g float8, saturated_fat float8, unit text, category text, nutrients jsonb,
+      details jsonb, search_text text)
     ON CONFLICT (source, source_id) DO UPDATE SET
       barcode = EXCLUDED.barcode, name_nl = EXCLUDED.name_nl, name_da = EXCLUDED.name_da,
       name_de = EXCLUDED.name_de, name_en = EXCLUDED.name_en, brand = EXCLUDED.brand,
       kcal = EXCLUDED.kcal, protein = EXCLUDED.protein, carbs = EXCLUDED.carbs, fat = EXCLUDED.fat,
       fiber = EXCLUDED.fiber, sugar = EXCLUDED.sugar, salt = EXCLUDED.salt,
-      serving_g = EXCLUDED.serving_g, search_text = EXCLUDED.search_text, updated_at = now()`;
+      serving_g = EXCLUDED.serving_g, saturated_fat = EXCLUDED.saturated_fat, unit = EXCLUDED.unit,
+      category = EXCLUDED.category, nutrients = EXCLUDED.nutrients, details = EXCLUDED.details,
+      search_text = EXCLUDED.search_text, updated_at = now()`;
 }
 
 /**

@@ -11,10 +11,11 @@ import { localeOf, targetFor } from "@/lib/targets";
 export const GET = handler(async (req: Request) => {
   const userId = await requireUser(req);
   const day = parseDay(new URL(req.url).searchParams.get("date"));
-  const [entries, target, locale] = await Promise.all([
+  const [entries, target, locale, water] = await Promise.all([
     db.diaryEntry.findMany({ where: { userId, date: day }, include: { food: true }, orderBy: { createdAt: "asc" } }),
     targetFor(userId, day),
     localeOf(userId),
+    db.waterEntry.findUnique({ where: { userId_date: { userId, date: day } } }),
   ]);
   const totals = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
   for (const e of entries) {
@@ -32,6 +33,8 @@ export const GET = handler(async (req: Request) => {
       foodId: e.foodId,
       name: displayName(e.food, locale),
       brand: e.food.brand,
+      category: e.food.category,
+      unit: e.food.unit,
       grams: e.grams,
       kcal: e.kcal,
       protein: e.protein,
@@ -40,6 +43,7 @@ export const GET = handler(async (req: Request) => {
     })),
     totals: { kcal: Math.round(totals.kcal), protein: r(totals.protein), carbs: r(totals.carbs), fat: r(totals.fat) },
     target,
+    waterMl: water?.ml ?? 0,
   });
 });
 

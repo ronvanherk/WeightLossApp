@@ -58,10 +58,12 @@ export function offToFood(p: OffProduct): FoodRow | null {
     protein: num(n["proteins_100g"]),
     carbs: num(n["carbohydrates_100g"]),
     fat: num(n["fat_100g"]),
+    saturatedFat: num(n["saturated-fat_100g"]),
     fiber: num(n["fiber_100g"]),
     sugar: num(n["sugars_100g"]),
     salt: num(n["salt_100g"]),
     servingG: num(p.serving_quantity),
+    unit: p.nutrition?.aggregated_set?.per === "100ml" ? "ml" : "g",
   };
   if (!row.nameNl && !row.nameDa && !row.nameDe && !row.nameEn) return null;
   return row;

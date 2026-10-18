@@ -48,6 +48,8 @@ model User {
   diary        DiaryEntry[]
   weights      WeightEntry[]
   foods        Food[]
+  water        WaterEntry[]
+  favorites    Favorite[]
 
   @@map("app_user")
 }
@@ -87,14 +89,26 @@ model Food {
   fiber       Float?
   sugar       Float?
   salt        Float?
+  saturatedFat Float?      @map("saturated_fat")
   // Typical portion in grams, when the source knows one.
   servingG    Float?       @map("serving_g")
+  // "g" or "ml": what the per-100 values are per.
+  unit        String       @default("g")
+  // Food group in Dutch, e.g. "Groente" (NEVO); null for branded products.
+  category    String?
+  // Every nutrient the source has, by NEVO component code (ENERCC, VITC, FE, ...), per 100 g.
+  nutrients   Json?
+  // Source extras: synonyms, remark, traces, fortification.
+  details     Json?
   // Lower-cased names + brand in all languages; trigram-indexed (see migration).
   searchText  String       @map("search_text")
   createdById Int?         @map("created_by_id")
   createdBy   User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
   updatedAt   DateTime     @updatedAt @map("updated_at")
   diary       DiaryEntry[]
+  ingredients FoodIngredient[] @relation("recipe")
+  usedIn      FoodIngredient[] @relation("ingredient")
+  favoriteOf  Favorite[]
 
   @@unique([source, sourceId])
   @@index([barcode])
@@ -131,4 +145,52 @@ model WeightEntry {
 
   @@unique([userId, date])
   @@map("weight_entry")
+}
+
+// A nutrient as NEVO defines it; the keys of Food.nutrients.
+model Nutrient {
+  code      String @id
+  groupNl   String @map("group_nl")
+  groupEn   String @map("group_en")
+  nameNl    String @map("name_nl")
+  nameEn    String @map("name_en")
+  unit      String
+  sortOrder Int    @map("sort_order")
+
+  @@map("nutrient")
+}
+
+// What a composite food is made of (NEVO recipes): `share` percent of the recipe's weight.
+model FoodIngredient {
+  foodId       Int   @map("food_id")
+  food         Food  @relation("recipe", fields: [foodId], references: [id], onDelete: Cascade)
+  ingredientId Int   @map("ingredient_id")
+  ingredient   Food  @relation("ingredient", fields: [ingredientId], references: [id], onDelete: Cascade)
+  share        Float
+
+  @@id([foodId, ingredientId])
+  @@map("food_ingredient")
+}
+
+// Water drunk on a day, in ml; one row per user and day.
+model WaterEntry {
+  id     Int      @id @default(autoincrement())
+  userId Int      @map("user_id")
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date   DateTime @db.Date
+  ml     Int
+
+  @@unique([userId, date])
+  @@map("water_entry")
+}
+
+model Favorite {
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodId    Int      @map("food_id")
+  food      Food     @relation(fields: [foodId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([userId, foodId])
+  @@map("favorite")
 }
