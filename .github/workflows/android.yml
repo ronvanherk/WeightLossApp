@@ -16,8 +16,8 @@ jobs:
         working-directory: android
     steps:
       # Higher than every earlier upload; the offset keeps clear of the hand-set codes 1 and 2.
-      - run: echo "VERSION_CODE=$((GITHUB_RUN_NUMBER + 100))" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
+      - run: echo "VERSION_CODE=$((GITHUB_RUN_NUMBER + 100))" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
