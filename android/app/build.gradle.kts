@@ -8,16 +8,21 @@ plugins {
 // Override for a local server: ./gradlew installDebug -PapiBaseUrl=http://10.0.2.2:3002/
 val apiBaseUrl = (findProperty("apiBaseUrl") as String?) ?: "https://food.quantumvikings.com/"
 
+// CI sets VERSION_CODE (the run number) so every Play upload is higher than the last.
+val ciVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull()
+// The Play upload key; only CI has it (GitHub secrets), see .github/workflows/android.yml.
+val uploadKeystore = System.getenv("UPLOAD_KEYSTORE")?.let(::file)?.takeIf { it.exists() }
+
 android {
     namespace = "com.quantumvikings.weightloss"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.quantumvikings.weightloss"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        targetSdk = 36
+        versionCode = ciVersionCode ?: 2
+        versionName = "0.2.${ciVersionCode ?: 0}"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
@@ -30,14 +35,27 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        if (uploadKeystore != null) {
+            create("upload") {
+                storeFile = uploadKeystore
+                storePassword = System.getenv("UPLOAD_KEYSTORE_PASSWORD")
+                keyAlias = "upload"
+                keyPassword = System.getenv("UPLOAD_KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("debug")
+            // Installs next to the Play version instead of clashing with its signature.
+            applicationIdSuffix = ".debug"
+            resValue("string", "app_name", "WeightLoss dev")
         }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("upload")
+            resValue("string", "app_name", "WeightLoss")
         }
     }
     compileOptions {
