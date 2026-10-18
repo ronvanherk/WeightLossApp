@@ -126,8 +126,11 @@ calorie and water bars, history); profile (target card, date picker). Shared pie
   versionCode = run number + 100, versionName `0.2.<code>`, artifact `weightloss-release-aab`.
   Upload to the `alpha` (closed testing) track is gated on variable `PLAY_UPLOAD_ENABLED=true`
   plus secret `PLAY_SERVICE_ACCOUNT_JSON`. Target SDK 36 (Play minimum since 2026-08-31) on
-  AGP 8.7 with `android.suppressUnsupportedCompileSdk=36`. Privacy policy:
-  https://food.quantumvikings.com/privacy (`server/src/app/privacy/page.tsx`).
+  AGP 8.7 with `android.suppressUnsupportedCompileSdk=36`. Privacy policy for the Play listing:
+  https://quantumvikings.com/weightloss/privacy.html (English; source in the quantumvikings.com
+  site repo, `weightloss/privacy.html`, deployed with its `deploy.sh`). The Dutch
+  `server/src/app/privacy/page.tsx` stays as a second copy; keep both in step.
+  Testers: Ron (vanherkhoek@gmail.com) and Cindy (evilkayleigh@gmail.com, her Android account).
 - Debug builds are `com.quantumvikings.weightloss.debug` ("WeightLoss dev"), signed with the
   committed `app/debug.keystore`, so they install next to the Play version and over each other.
 - When installing, always pass `adb -s <serial>`; a TV box on the LAN also shows up.
