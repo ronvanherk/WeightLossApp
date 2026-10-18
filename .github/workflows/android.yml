@@ -14,10 +14,9 @@ jobs:
     defaults:
       run:
         working-directory: android
-    env:
-      # Higher than every earlier upload; the offset keeps clear of the hand-set codes 1 and 2.
-      VERSION_CODE: ${{ github.run_number + 100 }}
     steps:
+      # Higher than every earlier upload; the offset keeps clear of the hand-set codes 1 and 2.
+      - run: echo "VERSION_CODE=$((GITHUB_RUN_NUMBER + 100))" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
