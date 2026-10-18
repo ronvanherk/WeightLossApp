@@ -131,6 +131,11 @@ calorie and water bars, history); profile (target card, date picker). Shared pie
   site repo, `weightloss/privacy.html`, deployed with its `deploy.sh`). The Dutch
   `server/src/app/privacy/page.tsx` stays as a second copy; keep both in step.
   Testers: Ron (vanherkhoek@gmail.com) and Cindy (evilkayleigh@gmail.com, her Android account).
+  Store listing assets and texts in `play-store/` (icon and feature graphic rendered from
+  `icon.svg`/`feature.html` with headless Chrome; screenshots taken from the reviewer account).
+  Reviewer account for Play review: `review@quantumvikings.com` (user 3, demo data only; password
+  in `~/Documents/WeightLossApp-keys/README.txt`). Never take store screenshots from Ron's or
+  Cindy's account. Tester list in the Console: "WeightLoss testers"; countries NL, DK, DE.
 - Debug builds are `com.quantumvikings.weightloss.debug` ("WeightLoss dev"), signed with the
   committed `app/debug.keystore`, so they install next to the Play version and over each other.
 - When installing, always pass `adb -s <serial>`; a TV box on the LAN also shows up.

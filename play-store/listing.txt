@@ -1,0 +1,29 @@
+App name (max 30)
+WeightLoss
+
+Short description (max 80)
+Calorieën, macro's, water en gewicht bijhouden, met de NEVO-voedingstabel.
+
+Full description (max 4000)
+WeightLoss is een overzichtelijke calorie- en gewichtsteller voor dagelijks gebruik.
+
+• Dagboek per maaltijd: ontbijt, lunch, avondeten en tussendoor, met een calorieëndoel per dag en een advies per maaltijd.
+• Macro's in één oogopslag: koolhydraten, eiwit en vet als gekleurde balken onder de calorieënring.
+• Ruim 300.000 producten: de officiële Nederlandse voedingstabel NEVO (RIVM) met alle voedingsstoffen, aangevuld met Open Food Facts voor merkproducten uit Nederland, Denemarken en Duitsland.
+• Barcode scannen om een product meteen te vinden.
+• Recent en favorieten: wat je vaak eet, voeg je met één tik toe, in de hoeveelheid van de vorige keer.
+• Eigen producten aanmaken, gewoon overgetypt van het etiket.
+• Water bijhouden met een glazenteller.
+• Voortgang: gewichtsgrafiek met je streefgewicht, BMI, en de calorieën en het water van de afgelopen week.
+• Persoonlijk dagdoel, berekend uit je lengte, gewicht, leeftijd, activiteit en gewenst tempo.
+
+Geen advertenties en geen tracking. Je gegevens staan op onze eigen server in de EU en worden met niemand gedeeld.
+
+WeightLoss is een privé-app: accounts worden door ons aangemaakt.
+
+Voedingswaarden: NEVO-online versie 2025/9.0, RIVM, Bilthoven, en Open Food Facts (Open Database License).
+
+Category: Health & Fitness
+Contact email: support@quantumvikings.com
+Website: https://quantumvikings.com
+Privacy policy: https://quantumvikings.com/weightloss/privacy.html
