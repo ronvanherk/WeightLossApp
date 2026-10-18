@@ -133,9 +133,13 @@ async function importNutrients(file: string) {
     nameEn: column(header, /^Component$/i, "component"),
     unit: column(header, /^Eenheid|Unit/i, "unit"),
   };
+  // The file is a tree: totals repeat as the head of their sub-group (PROT, CHO, FAT ...).
+  // The first occurrence keeps its place in the order.
+  const seen = new Set<string>();
   let n = 0;
   for (const [i, r] of rows.entries()) {
-    if (!r[c.code]) continue;
+    if (!r[c.code] || seen.has(r[c.code])) continue;
+    seen.add(r[c.code]);
     const data = {
       groupNl: r[c.groupNl],
       groupEn: r[c.groupEn],
