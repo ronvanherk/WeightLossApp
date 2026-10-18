@@ -27,6 +27,24 @@ interface Api {
     @GET("api/v1/foods/barcode/{code}")
     suspend fun foodByBarcode(@Path("code") code: String): FoodResponse
 
+    @GET("api/v1/foods/{id}")
+    suspend fun food(@Path("id") id: Int): FoodDetailResponse
+
+    @GET("api/v1/foods/recent")
+    suspend fun recentFoods(@Query("meal") meal: String? = null): FoodsResponse
+
+    @GET("api/v1/foods/favorites")
+    suspend fun favoriteFoods(): FoodsResponse
+
+    @POST("api/v1/foods/{id}/favorite")
+    suspend fun addFavorite(@Path("id") id: Int): OkResponse
+
+    @DELETE("api/v1/foods/{id}/favorite")
+    suspend fun removeFavorite(@Path("id") id: Int): OkResponse
+
+    @POST("api/v1/foods")
+    suspend fun createFood(@Body body: CreateFoodRequest): FoodResponse
+
     @GET("api/v1/diary")
     suspend fun diary(@Query("date") date: String): DiaryResponse
 
@@ -44,6 +62,12 @@ interface Api {
 
     @POST("api/v1/weight")
     suspend fun saveWeight(@Body body: WeightDto): OkResponse
+
+    @PUT("api/v1/water")
+    suspend fun saveWater(@Body body: WaterDto): OkResponse
+
+    @GET("api/v1/summary")
+    suspend fun summary(@Query("from") from: String, @Query("to") to: String): SummaryResponse
 }
 
 @Serializable data class LoginRequest(val email: String, val password: String)
@@ -82,6 +106,7 @@ data class Per100Dto(
     val protein: Double? = null,
     val carbs: Double? = null,
     val fat: Double? = null,
+    val saturatedFat: Double? = null,
     val fiber: Double? = null,
     val sugar: Double? = null,
     val salt: Double? = null,
@@ -96,6 +121,10 @@ data class FoodDto(
     val brand: String? = null,
     val per100g: Per100Dto,
     val servingG: Double? = null,
+    val unit: String = "g",
+    val category: String? = null,
+    /** Only in the recent list: the amount used last time. */
+    val lastGrams: Double? = null,
 )
 
 @Serializable data class FoodsResponse(val foods: List<FoodDto>)
@@ -108,6 +137,8 @@ data class EntryDto(
     val foodId: Int,
     val name: String,
     val brand: String? = null,
+    val category: String? = null,
+    val unit: String = "g",
     val grams: Double,
     val kcal: Double,
     val protein: Double,
@@ -116,8 +147,56 @@ data class EntryDto(
 )
 
 @Serializable data class TotalsDto(val kcal: Double, val protein: Double, val carbs: Double, val fat: Double)
-@Serializable data class DiaryResponse(val date: String, val entries: List<EntryDto>, val totals: TotalsDto, val target: TargetDto? = null)
+@Serializable data class DiaryResponse(
+    val date: String,
+    val entries: List<EntryDto>,
+    val totals: TotalsDto,
+    val target: TargetDto? = null,
+    val waterMl: Int = 0,
+)
 @Serializable data class AddEntryRequest(val date: String, val meal: String, val foodId: Int, val grams: Double)
 @Serializable data class UpdateEntryRequest(val grams: Double? = null, val meal: String? = null)
 @Serializable data class WeightDto(val date: String, val weightKg: Double)
 @Serializable data class WeightsResponse(val weights: List<WeightDto>)
+
+@Serializable data class NutrientDto(val code: String, val name: String, val value: Double, val unit: String)
+@Serializable data class NutrientGroupDto(val name: String, val nutrients: List<NutrientDto>)
+@Serializable data class IngredientDto(val foodId: Int, val name: String, val share: Double)
+
+@Serializable
+data class FoodDetailResponse(
+    val food: FoodDto,
+    val favorite: Boolean = false,
+    val nutrientGroups: List<NutrientGroupDto> = emptyList(),
+    val ingredients: List<IngredientDto> = emptyList(),
+    val synonyms: List<String> = emptyList(),
+    val remark: String? = null,
+    val traces: List<String> = emptyList(),
+    val fortified: List<String> = emptyList(),
+)
+
+@Serializable
+data class CreateFoodRequest(
+    val name: String,
+    val brand: String? = null,
+    val kcal: Double,
+    val protein: Double? = null,
+    val carbs: Double? = null,
+    val fat: Double? = null,
+    val servingG: Double? = null,
+)
+
+@Serializable data class WaterDto(val date: String, val ml: Int)
+
+@Serializable
+data class DaySummaryDto(
+    val date: String,
+    val kcal: Int,
+    val protein: Double,
+    val carbs: Double,
+    val fat: Double,
+    val waterMl: Int,
+    val targetKcal: Int? = null,
+)
+
+@Serializable data class SummaryResponse(val days: List<DaySummaryDto>)

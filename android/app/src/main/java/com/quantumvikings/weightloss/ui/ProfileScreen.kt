@@ -1,16 +1,29 @@
 package com.quantumvikings.weightloss.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DisplayMode
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -21,9 +34,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,14 +47,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.quantumvikings.weightloss.data.ProfileDto
 import com.quantumvikings.weightloss.data.Session
 import com.quantumvikings.weightloss.data.TargetDto
+import com.quantumvikings.weightloss.ui.theme.CarbsColor
+import com.quantumvikings.weightloss.ui.theme.FatColor
+import com.quantumvikings.weightloss.ui.theme.HeaderGradient
+import com.quantumvikings.weightloss.ui.theme.ProteinColor
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private val SEXES = listOf("MALE" to "Man", "FEMALE" to "Vrouw")
 private val ACTIVITIES = listOf(
@@ -53,8 +80,9 @@ private val LOCALES = listOf("nl" to "Nederlands", "da" to "Dansk", "de" to "Deu
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfileScreen(session: Session, onBack: () -> Unit) {
+fun ProfileScreen(session: Session) {
     var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
     var sex by remember { mutableStateOf("MALE") }
     var birthDate by remember { mutableStateOf("") }
     var height by remember { mutableStateOf("") }
@@ -64,11 +92,13 @@ fun ProfileScreen(session: Session, onBack: () -> Unit) {
     var locale by remember { mutableStateOf("nl") }
     var target by remember { mutableStateOf<TargetDto?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+    var picking by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         runCatching { session.api.me() }.onSuccess { me ->
             name = me.user.name
+            email = me.user.email
             target = me.target
             me.profile?.let { p ->
                 sex = p.sex
@@ -87,33 +117,99 @@ fun ProfileScreen(session: Session, onBack: () -> Unit) {
     val goalKg = parseDecimal(goal)
     val valid = birth != null && heightCm != null && heightCm in 100.0..250.0 && goalKg != null && goalKg in 30.0..300.0
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (name.isEmpty()) "Profiel" else "Profiel van $name") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Terug") } },
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
+                .background(HeaderGradient),
         ) {
-            Choice("Geslacht", SEXES, sex) { sex = it }
-            OutlinedTextField(
-                value = birthDate,
-                onValueChange = { birthDate = it },
-                label = { Text("Geboortedatum (JJJJ-MM-DD)") },
-                singleLine = true,
-                isError = birthDate.isNotEmpty() && birth == null,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            NumberField("Lengte (cm)", height) { height = it }
-            Choice("Activiteit", ACTIVITIES, activity) { activity = it }
-            NumberField("Streefgewicht (kg)", goal) { goal = it }
-            Choice("Tempo", RATES, rate) { rate = it }
-            Choice("Taal van productnamen", LOCALES, locale) { locale = it }
-            Button(enabled = valid, modifier = Modifier.fillMaxWidth(), onClick = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(24.dp),
+            ) {
+                Box(
+                    Modifier.size(84.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(name.take(1).uppercase().ifEmpty { "🙂" }, style = MaterialTheme.typography.displaySmall, color = Color.White)
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(name, style = MaterialTheme.typography.headlineSmall, color = Color.White)
+                Text(email, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.85f))
+            }
+        }
+
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            target?.let { t ->
+                SectionCard {
+                    Text("Jouw dagdoel", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text("${t.kcal}", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary)
+                        Text(" kcal per dag", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 6.dp))
+                    }
+                    Text(
+                        "Verbruik ${t.tdee} kcal · in rust ${t.bmr} kcal",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Pill("Koolh. ${t.carbsG} g", CarbsColor)
+                        Pill("Eiwit ${t.proteinG} g", ProteinColor)
+                        Pill("Vet ${t.fatG} g", FatColor)
+                    }
+                    if (t.clamped) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Begrensd op het minimum; kies een lager tempo voor een gezonder plan.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                }
+            }
+
+            SectionCard {
+                Text("Over jou", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(10.dp))
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SEXES.forEachIndexed { i, (value, label) ->
+                        SegmentedButton(
+                            selected = sex == value,
+                            onClick = { sex = value },
+                            shape = SegmentedButtonDefaults.itemShape(i, SEXES.size),
+                        ) { Text(label) }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = birth?.format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("nl"))) ?: "",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Geboortedatum") },
+                    trailingIcon = { IconButton(onClick = { picking = true }) { Icon(Icons.Filled.CalendarMonth, "Kiezen") } },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(10.dp))
+                NumberField("Lengte", height, "cm") { height = it }
+                Spacer(Modifier.height(10.dp))
+                Choice("Activiteit", ACTIVITIES, activity) { activity = it }
+            }
+
+            SectionCard {
+                Text("Je doel", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(10.dp))
+                NumberField("Streefgewicht", goal, "kg") { goal = it }
+                Spacer(Modifier.height(10.dp))
+                Choice("Tempo", RATES, rate) { rate = it }
+                Spacer(Modifier.height(10.dp))
+                Choice("Taal van productnamen", LOCALES, locale) { locale = it }
+            }
+
+            message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            Button(enabled = valid, modifier = Modifier.fillMaxWidth().height(52.dp), onClick = {
                 val profile = ProfileDto(sex, birthDate, heightCm!!, activity, goalKg!!, rate.toDouble(), locale)
                 scope.launch {
                     runCatching {
@@ -121,28 +217,41 @@ fun ProfileScreen(session: Session, onBack: () -> Unit) {
                         session.api.me()
                     }.onSuccess {
                         target = it.target
-                        message = if (it.target == null) "Opgeslagen. Voer nog je gewicht in voor een dagdoel." else "Opgeslagen."
+                        message = if (it.target == null) "Opgeslagen. Voer nog je gewicht in (Voortgang) voor een dagdoel." else "Opgeslagen ✓"
                     }.onFailure { message = session.describe(it) }
                 }
             }) { Text("Opslaan") }
-            message?.let { Text(it) }
-            target?.let {
-                Text(
-                    "Dagdoel ${it.kcal} kcal (verbruik ${it.tdee} kcal, rust ${it.bmr} kcal)",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            OutlinedButton(onClick = { session.signOut() }, modifier = Modifier.fillMaxWidth()) { Text("Uitloggen") }
+            OutlinedButton(
+                onClick = { session.signOut() },
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Uitloggen") }
         }
+    }
+
+    if (picking) {
+        val initial = (birth ?: LocalDate.now().minusYears(40)).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val state = rememberDatePickerState(initialSelectedDateMillis = initial, initialDisplayMode = DisplayMode.Input)
+        DatePickerDialog(
+            onDismissRequest = { picking = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { birthDate = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toString() }
+                    picking = false
+                }) { Text("Kiezen") }
+            },
+            dismissButton = { TextButton(onClick = { picking = false }) { Text("Annuleren") } },
+        ) { DatePicker(state = state) }
     }
 }
 
 @Composable
-private fun NumberField(label: String, value: String, onChange: (String) -> Unit) {
+private fun NumberField(label: String, value: String, unit: String, onChange: (String) -> Unit) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
+        suffix = { Text(unit) },
         singleLine = true,
         isError = value.isNotEmpty() && parseDecimal(value) == null,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),

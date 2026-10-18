@@ -16,8 +16,8 @@ android {
         applicationId = "com.quantumvikings.weightloss"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
@@ -49,6 +49,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.core)
+    implementation(libs.compose.material.icons.extended)
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.retrofit)
