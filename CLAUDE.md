@@ -29,9 +29,12 @@ android/   Kotlin + Compose app talking to server/ over /api/v1
   no sign-up route. `POST /api/v1/login` returns an HS256 bearer token signed with
   `AUTH_SECRET`, valid 180 days. Every other route calls `requireUser()`.
 - **API** (`src/app/api/v1`): `login`, `me` (GET profile + today's target, PUT profile),
-  `foods/search?q=`, `foods/barcode/[code]`, `foods/[id]`, `foods` (POST custom product),
-  `diary?date=` (GET day, POST entry), `diary/[id]` (PATCH grams/meal, DELETE), `weight`
-  (GET list, POST upserts one per day). Errors are `{ "error": "..." }` with a status code.
+  `foods/search?q=`, `foods/barcode/[code]`, `foods/[id]` (detail: all nutrients in four
+  sections, NEVO ingredients, synonyms, favourite flag), `foods/[id]/favorite` (POST/DELETE),
+  `foods/favorites`, `foods/recent?meal=` (with `lastGrams`), `foods` (POST custom product),
+  `diary?date=` (GET day incl. `waterMl`, POST entry), `diary/[id]` (PATCH grams/meal, DELETE),
+  `weight` (GET list, POST upserts one per day), `water` (GET/PUT the day's total ml),
+  `summary?from=&to=` (per day kcal, macros, water and that day's target; max 366 days). Errors are `{ "error": "..." }` with a status code.
   Another user's diary entry answers 404, not 403.
 - **Targets** (`src/lib/nutrition.ts`): Mifflin-St Jeor BMR x activity factor = TDEE, minus
   `weeklyLossKg x 7700 / 7`. Floor 1500 kcal (men) / 1200 (women); `clamped: true` tells the
@@ -52,14 +55,18 @@ is a re-runnable upsert (`upsertFoods()`, one SQL statement per 1000 rows).
 
 | Source | Country | Status |
 |---|---|---|
-| NEVO (RIVM) | NL | importer done: `pnpm import:nevo <csv>`; finds columns by header |
+| NEVO (RIVM) | NL | **imported 2026-10-18**: v2025/9.0, 2,328 foods, all 137 nutrients, 695 recipes; `pnpm import:nevo <folder>` |
 | Open Food Facts | NL/DK/DE branded | **imported 2026-10-18** (321k); `pnpm import:off <jsonl.gz>`; plus live barcode lookup |
 | Frida (DTU Fødevareinstituttet) | DK | **todo** |
 | BLS (Max Rubner-Institut) | DE | **todo**; check the current licence first (older releases were paid) |
 
-- The NEVO importer was tested against a hand-made file shaped like the NEVO export, **not the
-  real file**. If it fails on the real export it prints all headers; adjust the regexes in
-  `COLUMNS` (`scripts/import-nevo.ts`).
+- NEVO is a free download (form at https://www.rivm.nl/form/nevo-online-gegevensbestand-2):
+  a folder of `|`-separated CSVs. The importer reads the main file (every `CODE (unit)` column
+  into `food.nutrients`, food group into `category`, synonyms/remarks/traces/fortification into
+  `details`), `_Nutrienten_Nutrients.csv` into `nutrient` (it is a tree with repeated codes; the
+  first occurrence wins) and `_Recepten_Recipes.csv` into `food_ingredient` (12 lines point at
+  codes not in the release and are skipped). The CSVs live on the server in
+  `/opt/weightloss-data/nevo`. Attribution shown in the app: "NEVO-online versie 2025/9.0, RIVM".
 - Open Food Facts: dump at `https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz`
   (~7 GB). The importer streams it and keeps `countries_tags` containing NL/DK/DE. A barcode
   not in the table is fetched live from the OFF API and cached as an `OFF` row. The OFF data is
@@ -88,10 +95,17 @@ pnpm test                   # unit tests: targets, OFF mapping
 ## Android (`android/`)
 
 `com.quantumvikings.weightloss`, minSdk 26 / targetSdk 35, Compose + Material 3, Retrofit +
-kotlinx.serialization, single activity with navigation-compose. Screens: login, day diary
-(date arrows, kcal left, macros, per-meal list with delete), add food (search with debounce,
-**barcode scan via Play services code scanner**, so no CAMERA permission, same as valorguard-app),
-portion dialog, weight log, profile.
+kotlinx.serialization, single activity with navigation-compose. Look and feel modelled on
+Yazio (2026-10-18): own theme in `ui/theme/Theme.kt` (green/teal gradient headers, fixed colours
+per macro and per meal, light status bar icons everywhere), bottom navigation Dagboek /
+Voortgang / Profiel. Screens: login; diary (week strip, calorie ring, macro bars, meal cards with
+an advised share of the day 25/35/30/10 %, water glasses, bottom sheet to edit/move/delete an
+entry); add food (recent + favourites tabs, search, one-tap add with last/serving amount,
+**barcode scan via Play services code scanner**, so no CAMERA permission); food detail (portion
+presets, macro donut, nutrition table, collapsible NEVO nutrient sections, ingredients,
+favourite heart, source line); own product; progress (weight line chart with goal, BMI, 7-day
+calorie and water bars, history); profile (target card, date picker). Shared pieces in
+`ui/Components.kt`; food-group emoji in `categoryEmoji()`.
 
 - API base URL is a build field: default `https://food.quantumvikings.com/`, override with
   `./gradlew installDebug -PapiBaseUrl=http://10.0.2.2:3002/` (emulator -> host). Cleartext is
@@ -139,12 +153,13 @@ Postgres stays on loopback.
 
 ## Next
 
-1. Install the CI-built APK on both phones (needs the server deployed to log in).
-2. Import NEVO (OFF is in, server and both accounts exist, see above).
-3. Frida and BLS importers (Danish and German basics, with names in those languages).
-4. Weight chart, editing a portion from the diary, recent/favourite foods for fast logging.
-5. Water, a fasting timer, then Health Connect (steps/activity -> TDEE adjustment).
-6. Recipes made of foods (portion = share of the total), shared between both users.
+1. Install the 0.2.0 APK on Cindy's phone too.
+2. Frida and BLS importers (Danish and German basics, with names in those languages).
+3. Own recipes made of foods (portion = share of the total), shared between both users;
+   NEVO's composite foods already show their ingredients.
+4. Fasting timer, copy a meal from yesterday, streaks, then Health Connect (steps/activity ->
+   TDEE adjustment).
+5. Round OFF nutrient floats at import (9.100000381 g).
 
 ## Conventions
 
