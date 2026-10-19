@@ -61,13 +61,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.quantumvikings.weightloss.data.CopyRequest
 import com.quantumvikings.weightloss.data.DaySummaryDto
 import com.quantumvikings.weightloss.data.DiaryResponse
 import com.quantumvikings.weightloss.data.EntryDto
+import com.quantumvikings.weightloss.data.FastingResponse
+import com.quantumvikings.weightloss.data.StartFastRequest
+import com.quantumvikings.weightloss.data.UpdateFastRequest
 import com.quantumvikings.weightloss.data.Session
 import com.quantumvikings.weightloss.data.UpdateEntryRequest
 import com.quantumvikings.weightloss.data.WaterDto
@@ -80,6 +86,7 @@ import com.quantumvikings.weightloss.ui.theme.WaterColor
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -108,17 +115,41 @@ fun DiaryScreen(
     var reload by remember { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf<EntryDto?>(null) }
     var picking by remember { mutableStateOf(false) }
+    var fasting by remember { mutableStateOf<FastingResponse?>(null) }
     val scope = rememberCoroutineScope()
     val monday = day.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
     LaunchedEffect(date, reload) {
-        runCatching { session.api.diary(date) }
+        runCatching { session.api.diary(date, LocalDate.now().toString()) }
             .onSuccess { diary = it; error = null }
             .onFailure { error = session.describe(it) }
+    }
+    LaunchedEffect(reload) {
+        runCatching { session.api.fasting() }.onSuccess { fasting = it }
     }
     LaunchedEffect(monday, reload) {
         runCatching { session.api.summary(monday.toString(), monday.plusDays(6).toString()) }
             .onSuccess { week = it.days }
+    }
+
+    /** Runs a fasting call, then reloads the card; errors go to the screen. */
+    fun fast(call: suspend () -> Unit) {
+        scope.launch {
+            runCatching { call() }
+                .onSuccess { fasting = session.api.fasting() }
+                .onFailure { error = session.describe(it) }
+        }
+    }
+
+    fun copyYesterday(meal: String) {
+        scope.launch {
+            runCatching { session.api.copyDiary(CopyRequest(from = day.minusDays(1).toString(), to = date, meal = meal)) }
+                .onSuccess { res ->
+                    if (res.copied == 0) error = "Gisteren stond er niets bij ${mealLabel(meal).lowercase()}."
+                    else { error = null; reload++ }
+                }
+                .onFailure { error = session.describe(it) }
+        }
     }
 
     fun setWater(ml: Int) {
@@ -181,10 +212,29 @@ fun DiaryScreen(
                         targetKcal = d.target?.kcal,
                         onAdd = { onAdd(meal) },
                         onEntry = { editing = it },
+                        onCopyYesterday = { copyYesterday(meal) },
                     )
                 }
             }
             item(key = "water") { WaterCard(ml = d.waterMl, onChange = ::setWater) }
+            val f = fasting
+            if (f != null && day == LocalDate.now()) {
+                item(key = "fasting") {
+                    FastingCard(
+                        current = f.current,
+                        last = f.recent.firstOrNull(),
+                        onStart = { goal, at ->
+                            fast { session.api.startFast(StartFastRequest(goal, at?.truncatedTo(ChronoUnit.SECONDS)?.toString())) }
+                        },
+                        onAdjustStart = { at ->
+                            f.current?.let { c -> fast { session.api.updateFast(c.id, UpdateFastRequest(startedAt = at.truncatedTo(ChronoUnit.SECONDS).toString())) } }
+                        },
+                        onStop = { f.current?.let { c -> fast { session.api.updateFast(c.id, UpdateFastRequest(end = true)) } } },
+                        onCancel = { f.current?.let { c -> fast { session.api.deleteFast(c.id) } } },
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+            }
         }
     }
 
@@ -260,6 +310,18 @@ private fun Header(
                     if (day == today || day == today.minusDays(1) || day == today.plusDays(1)) {
                         Text(day.format(DAY_FORMAT), style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.85f))
                     }
+                }
+                diary?.streak?.takeIf { it >= 2 }?.let { n ->
+                    Text(
+                        "🔥 $n",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(Color.White.copy(alpha = 0.2f))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                            .semantics { contentDescription = "$n dagen op rij bijgehouden" },
+                    )
                 }
                 IconButton(onClick = onPick) { Icon(Icons.Filled.CalendarMonth, "Datum kiezen", tint = Color.White) }
             }
@@ -361,6 +423,7 @@ private fun MealCard(
     targetKcal: Int?,
     onAdd: () -> Unit,
     onEntry: (EntryDto) -> Unit,
+    onCopyYesterday: () -> Unit,
 ) {
     val style = MEAL_STYLES.getValue(meal)
     val kcal = entries.sumOf { it.kcal }.toInt()
@@ -410,6 +473,10 @@ private fun MealCard(
                 }
             }
             Spacer(Modifier.height(6.dp))
+        } else {
+            TextButton(onClick = onCopyYesterday, modifier = Modifier.padding(start = 64.dp, bottom = 6.dp)) {
+                Text("↺ Zelfde als gisteren", color = style.color)
+            }
         }
     }
 }

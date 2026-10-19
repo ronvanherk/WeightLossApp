@@ -114,11 +114,12 @@ fun WeightLossApp(session: Session) {
                         date = date,
                         onOpenFood = { id, grams -> nav.navigate("food/$id?meal=$meal&date=$date&grams=${grams ?: ""}") },
                         onCreate = { nav.navigate("create/$meal/$date") },
+                        onNewRecipe = { nav.navigate("recipe/0?meal=$meal&date=$date") },
                         onBack = { nav.popBackStack() },
                     )
                 }
                 composable(
-                    "food/{id}?meal={meal}&date={date}&grams={grams}",
+                    FOOD_ROUTE,
                     arguments = listOf(
                         navArgument("id") { type = NavType.IntType },
                         navArgument("meal") { nullable = true; defaultValue = null },
@@ -134,10 +135,37 @@ fun WeightLossApp(session: Session) {
                         date = args?.getString("date")?.takeIf { it.isNotEmpty() } ?: day,
                         initialGrams = args?.getString("grams")?.let(::parseDecimal),
                         onOpenFood = { id -> nav.navigate("food/$id?meal=${args?.getString("meal") ?: ""}&date=${args?.getString("date") ?: ""}&grams=") },
+                        onEditRecipe = { id -> nav.navigate("recipe/$id?meal=${args?.getString("meal") ?: ""}&date=${args?.getString("date") ?: ""}") },
                         onAdded = {
                             // Back to the diary, past the add screen.
                             nav.popBackStack("diary", inclusive = false)
                         },
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(
+                    "recipe/{id}?meal={meal}&date={date}",
+                    arguments = listOf(
+                        navArgument("id") { type = NavType.IntType },
+                        navArgument("meal") { nullable = true; defaultValue = null },
+                        navArgument("date") { nullable = true; defaultValue = null },
+                    ),
+                ) { entry ->
+                    val args = entry.arguments
+                    val id = args?.getInt("id")?.takeIf { it > 0 }
+                    val meal = args?.getString("meal")?.takeIf { it in MEAL_STYLES } ?: "SNACK"
+                    val date = args?.getString("date")?.takeIf { it.isNotEmpty() } ?: day
+                    RecipeScreen(
+                        session = session,
+                        recipeId = id,
+                        onSaved = { saved ->
+                            // Show the saved recipe; an edited one replaces its old detail screen.
+                            nav.navigate("food/$saved?meal=$meal&date=$date&grams=") {
+                                if (id == null) popUpTo("add/{meal}/{date}")
+                                else popUpTo(FOOD_ROUTE) { inclusive = true }
+                            }
+                        },
+                        onDeleted = { nav.popBackStack("add/{meal}/{date}", inclusive = false) || nav.popBackStack("diary", inclusive = false) },
                         onBack = { nav.popBackStack() },
                     )
                 }
@@ -154,6 +182,8 @@ fun WeightLossApp(session: Session) {
         }
     }
 }
+
+private const val FOOD_ROUTE = "food/{id}?meal={meal}&date={date}&grams={grams}"
 
 val MEALS = listOf("BREAKFAST", "LUNCH", "DINNER", "SNACK").map { it to MEAL_STYLES.getValue(it).label }
 

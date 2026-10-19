@@ -46,7 +46,10 @@ interface Api {
     suspend fun createFood(@Body body: CreateFoodRequest): FoodResponse
 
     @GET("api/v1/diary")
-    suspend fun diary(@Query("date") date: String): DiaryResponse
+    suspend fun diary(@Query("date") date: String, @Query("today") today: String): DiaryResponse
+
+    @POST("api/v1/diary/copy")
+    suspend fun copyDiary(@Body body: CopyRequest): CopyResponse
 
     @POST("api/v1/diary")
     suspend fun addEntry(@Body body: AddEntryRequest): IdResponse
@@ -68,6 +71,33 @@ interface Api {
 
     @GET("api/v1/summary")
     suspend fun summary(@Query("from") from: String, @Query("to") to: String): SummaryResponse
+
+    @GET("api/v1/recipes")
+    suspend fun recipes(): FoodsResponse
+
+    @GET("api/v1/recipes/{id}")
+    suspend fun recipe(@Path("id") id: Int): RecipeDto
+
+    @POST("api/v1/recipes")
+    suspend fun createRecipe(@Body body: RecipeRequest): FoodResponse
+
+    @PUT("api/v1/recipes/{id}")
+    suspend fun updateRecipe(@Path("id") id: Int, @Body body: RecipeRequest): FoodResponse
+
+    @DELETE("api/v1/recipes/{id}")
+    suspend fun deleteRecipe(@Path("id") id: Int): OkResponse
+
+    @GET("api/v1/fasting")
+    suspend fun fasting(): FastingResponse
+
+    @POST("api/v1/fasting")
+    suspend fun startFast(@Body body: StartFastRequest): FastResponse
+
+    @PATCH("api/v1/fasting/{id}")
+    suspend fun updateFast(@Path("id") id: Int, @Body body: UpdateFastRequest): FastResponse
+
+    @DELETE("api/v1/fasting/{id}")
+    suspend fun deleteFast(@Path("id") id: Int): OkResponse
 }
 
 @Serializable data class LoginRequest(val email: String, val password: String)
@@ -153,6 +183,8 @@ data class EntryDto(
     val totals: TotalsDto,
     val target: TargetDto? = null,
     val waterMl: Int = 0,
+    /** Days in a row with something logged, up to today. */
+    val streak: Int = 0,
 )
 @Serializable data class AddEntryRequest(val date: String, val meal: String, val foodId: Int, val grams: Double)
 @Serializable data class UpdateEntryRequest(val grams: Double? = null, val meal: String? = null)
@@ -200,3 +232,35 @@ data class DaySummaryDto(
 )
 
 @Serializable data class SummaryResponse(val days: List<DaySummaryDto>)
+
+@Serializable data class CopyRequest(val from: String, val to: String, val meal: String? = null)
+@Serializable data class CopyResponse(val copied: Int)
+
+@Serializable data class RecipeIngredientDto(val grams: Double, val food: FoodDto)
+
+@Serializable
+data class RecipeDto(
+    val id: Int,
+    val name: String,
+    val servings: Int,
+    val cookedG: Double? = null,
+    val food: FoodDto,
+    val ingredients: List<RecipeIngredientDto>,
+)
+
+@Serializable data class RecipeIngredientRequest(val foodId: Int, val grams: Double)
+
+@Serializable
+data class RecipeRequest(
+    val name: String,
+    val servings: Int,
+    val cookedG: Double? = null,
+    val ingredients: List<RecipeIngredientRequest>,
+)
+
+/** Times are ISO-8601 instants. */
+@Serializable data class FastDto(val id: Int, val startedAt: String, val endedAt: String? = null, val goalHours: Int)
+@Serializable data class FastingResponse(val current: FastDto? = null, val recent: List<FastDto> = emptyList())
+@Serializable data class FastResponse(val fast: FastDto)
+@Serializable data class StartFastRequest(val goalHours: Int, val startedAt: String? = null)
+@Serializable data class UpdateFastRequest(val goalHours: Int? = null, val startedAt: String? = null, val end: Boolean? = null)

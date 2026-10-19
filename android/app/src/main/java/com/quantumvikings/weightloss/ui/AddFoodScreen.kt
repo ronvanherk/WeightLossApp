@@ -69,7 +69,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
-private val LIST_TABS = listOf("Recent", "Favorieten")
+private val LIST_TABS = listOf("Recent", "Favorieten", "Recepten")
 
 @Composable
 fun AddFoodScreen(
@@ -78,6 +78,7 @@ fun AddFoodScreen(
     date: String,
     onOpenFood: (id: Int, grams: Double?) -> Unit,
     onCreate: () -> Unit,
+    onNewRecipe: () -> Unit,
     onBack: () -> Unit,
 ) {
     val style = MEAL_STYLES.getValue(meal)
@@ -86,6 +87,7 @@ fun AddFoodScreen(
     var results by remember { mutableStateOf<List<FoodDto>>(emptyList()) }
     var recent by remember { mutableStateOf<List<FoodDto>?>(null) }
     var favorites by remember { mutableStateOf<List<FoodDto>?>(null) }
+    var recipes by remember { mutableStateOf<List<FoodDto>?>(null) }
     var searching by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     // Foods added from this screen, so their "+" turns into a check.
@@ -97,6 +99,7 @@ fun AddFoodScreen(
     LaunchedEffect(Unit) {
         runCatching { session.api.recentFoods(meal) }.onSuccess { recent = it.foods }.onFailure { recent = emptyList() }
         runCatching { session.api.favoriteFoods() }.onSuccess { favorites = it.foods }.onFailure { favorites = emptyList() }
+        runCatching { session.api.recipes() }.onSuccess { recipes = it.foods }.onFailure { recipes = emptyList() }
     }
     LaunchedEffect(query) {
         if (query.trim().length < 2) {
@@ -228,8 +231,10 @@ fun AddFoodScreen(
             val list = when {
                 searchMode -> results
                 tab == 0 -> recent
-                else -> favorites
+                tab == 1 -> favorites
+                else -> recipes
             }
+            val recipeTab = !searchMode && tab == 2
             when {
                 list == null || (searchMode && searching && results.isEmpty()) -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = style.color)
@@ -238,9 +243,11 @@ fun AddFoodScreen(
                     when {
                         searchMode -> "Niets gevonden voor \"${query.trim()}\". Probeer een ander woord, scan de barcode of maak het product zelf aan."
                         tab == 0 -> "Nog niets gegeten met deze app. Zoek hierboven een product of scan een barcode."
-                        else -> "Nog geen favorieten. Tik bij een product op het hartje."
+                        tab == 1 -> "Nog geen favorieten. Tik bij een product op het hartje."
+                        else -> "Nog geen recepten. Maak er een van wat je vaak kookt: dan voeg je het daarna met één tik toe, per portie."
                     },
-                    onCreate,
+                    if (recipeTab) onNewRecipe else onCreate,
+                    if (recipeTab) "Nieuw recept" else "Eigen product aanmaken",
                 )
                 else -> LazyColumn(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
@@ -256,7 +263,7 @@ fun AddFoodScreen(
                         )
                     }
                     item {
-                        CreateLink(onCreate)
+                        if (recipeTab) CreateLink(onNewRecipe, "Nieuw recept") else CreateLink(onCreate)
                     }
                 }
             }
@@ -301,7 +308,7 @@ private fun FoodRow(food: FoodDto, accent: Color, added: Boolean, onOpen: () -> 
 }
 
 @Composable
-private fun EmptyState(text: String, onCreate: () -> Unit) {
+private fun EmptyState(text: String, onCreate: () -> Unit, createLabel: String) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxWidth().padding(32.dp),
@@ -310,12 +317,12 @@ private fun EmptyState(text: String, onCreate: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(8.dp))
-        CreateLink(onCreate)
+        CreateLink(onCreate, createLabel)
     }
 }
 
 @Composable
-private fun CreateLink(onCreate: () -> Unit) {
+private fun CreateLink(onCreate: () -> Unit, label: String = "Eigen product aanmaken") {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(onClick = onCreate).padding(12.dp),
@@ -323,6 +330,6 @@ private fun CreateLink(onCreate: () -> Unit) {
     ) {
         Icon(Icons.Filled.EditNote, null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(8.dp))
-        Text("Eigen product aanmaken", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+        Text(label, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
     }
 }

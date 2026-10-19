@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
@@ -74,6 +75,7 @@ fun FoodDetailScreen(
     date: String,
     initialGrams: Double?,
     onOpenFood: (Int) -> Unit,
+    onEditRecipe: (Int) -> Unit,
     onAdded: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -123,6 +125,9 @@ fun FoodDetailScreen(
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(4.dp)) {
                         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Terug", tint = Color.White) }
                         Spacer(Modifier.weight(1f))
+                        if (food.source == "RECIPE") {
+                            IconButton(onClick = { onEditRecipe(food.id) }) { Icon(Icons.Filled.Edit, "Recept bewerken", tint = Color.White) }
+                        }
                         IconButton(onClick = {
                             val now = !favorite
                             favorite = now
@@ -281,6 +286,9 @@ fun FoodDetailScreen(
                         "NEVO" -> "Bron: NEVO-online versie 2025/9.0, RIVM, Bilthoven"
                         "OFF" -> "Bron: Open Food Facts (ODbL)" + (food.barcode?.let { " · barcode $it" } ?: "")
                         "CUSTOM" -> "Eigen product"
+                        "RECIPE" -> "Eigen recept" + (food.servingG?.let { " · 1 portie = ${fmt(it)} g" } ?: "")
+                        "FRIDA" -> "Bron: © The Danish Food Composition Database (fcdb.fooddata.dk), versie 6.1, mei 2026, DTU Fødevareinstituttet"
+                        "BLS" -> "Bron: Max Rubner-Institut, Bundeslebensmittelschlüssel (BLS) 4.0, 2025"
                         else -> "Bron: ${food.source}"
                     },
                     style = MaterialTheme.typography.bodySmall,

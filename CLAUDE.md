@@ -32,7 +32,11 @@ android/   Kotlin + Compose app talking to server/ over /api/v1
   `foods/search?q=`, `foods/barcode/[code]`, `foods/[id]` (detail: all nutrients in four
   sections, NEVO ingredients, synonyms, favourite flag), `foods/[id]/favorite` (POST/DELETE),
   `foods/favorites`, `foods/recent?meal=` (with `lastGrams`), `foods` (POST custom product),
-  `diary?date=` (GET day incl. `waterMl`, POST entry), `diary/[id]` (PATCH grams/meal, DELETE),
+  `diary?date=&today=` (GET day incl. `waterMl` and `streak`, POST entry), `diary/[id]` (PATCH
+  grams/meal, DELETE), `diary/copy` (POST `{from, to, meal?}`: a meal or whole day to another day,
+  recomputed from the current food rows), `recipes` (GET all, POST), `recipes/[id]` (GET for
+  editing, PUT, DELETE; 409 when logged or used in another recipe), `fasting` (GET running + last
+  14, POST start), `fasting/[id]` (PATCH `goalHours`/`startedAt`/`end: true`, DELETE),
   `weight` (GET list, POST upserts one per day), `water` (GET/PUT the day's total ml),
   `summary?from=&to=` (per day kcal, macros, water and that day's target; max 366 days). Errors are `{ "error": "..." }` with a status code.
   Another user's diary entry answers 404, not 403.
@@ -44,6 +48,15 @@ android/   Kotlin + Compose app talking to server/ over /api/v1
   rewrites history. PATCHing grams recomputes from the current food row.
 - **Custom products are shared** between both users (the point: Cindy's lasagne once, used by
   both). `createdById` records who made it.
+- **Recipes** are `food` rows with source `RECIPE` (`src/lib/recipe-store.ts`): per-100 g values are
+  the weighted sum of the ingredients over the cooked weight (or the raw total), `servingG` is one
+  portion, `food_ingredient` holds the shares (so the detail screen lists them like NEVO's
+  composites) and `details.recipe` keeps `{servings, cookedG, ingredients[{foodId, grams}]}` for
+  editing. A detailed nutrient is only summed when every ingredient has it (`combine()`). Editing
+  a recipe never touches diary entries (snapshots) or recipes that use it.
+- **Streak** (`src/lib/streak.ts`): days in a row with an entry, up to `today` from the phone
+  (the server runs on UTC); yesterday counts while today is still empty.
+- **Fasting**: table `fast`, one open row (`ended_at` null) per user at most.
 
 ### Food data
 
@@ -57,8 +70,8 @@ is a re-runnable upsert (`upsertFoods()`, one SQL statement per 1000 rows).
 |---|---|---|
 | NEVO (RIVM) | NL | **imported 2026-10-18**: v2025/9.0, 2,328 foods, all 137 nutrients, 695 recipes; `pnpm import:nevo <folder>` |
 | Open Food Facts | NL/DK/DE branded | **imported 2026-10-18** (321k); `pnpm import:off <jsonl.gz>`; plus live barcode lookup |
-| Frida (DTU Fødevareinstituttet) | DK | **todo** |
-| BLS (Max Rubner-Institut) | DE | **todo**; check the current licence first (older releases were paid) |
+| Frida (DTU Fødevareinstituttet) | DK | **imported 2026-10-19**: FCDB v6.1 (May 2026), 1,390 foods, CC BY 4.0; `pnpm import:frida <xlsx>` |
+| BLS (Max Rubner-Institut) | DE | **imported 2026-10-19**: BLS 4.0 (2025), 7,140 foods, CC BY 4.0 (free since Dec 2025); `pnpm import:bls <xlsx>` |
 
 - NEVO is a free download (form at https://www.rivm.nl/form/nevo-online-gegevensbestand-2):
   a folder of `|`-separated CSVs. The importer reads the main file (every `CODE (unit)` column
@@ -67,6 +80,16 @@ is a re-runnable upsert (`upsertFoods()`, one SQL statement per 1000 rows).
   first occurrence wins) and `_Recepten_Recipes.csv` into `food_ingredient` (12 lines point at
   codes not in the release and are skipped). The CSVs live on the server in
   `/opt/weightloss-data/nevo`. Attribution shown in the app: "NEVO-online versie 2025/9.0, RIVM".
+- Frida: https://doi.org/10.11583/DTU.32312844, file `FCDB_6.1_Dataset.xlsx` (sheets Food,
+  Parameter, Data_Normalised). BLS: https://www.blsdb.de/assets/uploads/BLS_4_0_2025_DE.zip, file
+  `BLS_4_0_Daten_2025_DE.xlsx` (per nutrient three columns: value, origin, reference; markers `-`
+  unknown, `TR`/`<LOD`/`<LOQ` = 0). Both use EuroFIR component codes like NEVO, so values land in
+  `food.nutrients` under NEVO's codes with units converted (`src/lib/composition.ts`); codes NEVO
+  lacks are dropped. Names: Frida da+en, BLS de+en; `category` is the English food group (the app
+  maps both Dutch and English groups to an emoji). The xlsx files live on the server in
+  `/opt/weightloss-data/{frida,bls}`. Attribution in the app's source line: "© The Danish Food
+  Composition Database (fcdb.fooddata.dk), version 6.1, May 2026, DTU" and "Max Rubner-Institut,
+  BLS 4.0". Neither has portion sizes.
 - Open Food Facts: dump at `https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz`
   (~7 GB). The importer streams it and keeps `countries_tags` containing NL/DK/DE. A barcode
   not in the table is fetched live from the OFF API and cached as an `OFF` row. The OFF data is
@@ -77,7 +100,8 @@ is a re-runnable upsert (`upsertFoods()`, one SQL statement per 1000 rows).
   12k da), DB 159 MB, ~30 min on the web server. The dump is now **13 GB**, not 7; it was
   deleted afterwards (server disk 84%). Re-run with `/opt/weightloss-data/import-off.sh` in tmux.
 - Plausibility: OFF products without a name, without energy, or above 900 kcal/100 g are
-  dropped. kJ-only products are converted (/ 4.184).
+  dropped. kJ-only products are converted (/ 4.184). Values are rounded to 2 decimals (the dump
+  has float noise like 9.100000381); existing rows were rounded in SQL on 2026-10-19.
 - Upserts consume sequence values on conflict, so food ids have gaps. Harmless.
 
 ### Running it
@@ -100,10 +124,13 @@ Yazio (2026-10-18): own theme in `ui/theme/Theme.kt` (green/teal gradient header
 per macro and per meal, light status bar icons everywhere), bottom navigation Dagboek /
 Voortgang / Profiel. Screens: login; diary (week strip, calorie ring, macro bars, meal cards with
 an advised share of the day 25/35/30/10 %, water glasses, bottom sheet to edit/move/delete an
-entry); add food (recent + favourites tabs, search, one-tap add with last/serving amount,
+entry, "same as yesterday" on an empty meal, a fasting card on today with goal chips, live
+progress and a start-time picker, a 🔥 streak pill in the header from 2 days); add food (recent,
+favourites and recipes tabs, search, one-tap add with last/serving amount,
 **barcode scan via Play services code scanner**, so no CAMERA permission); food detail (portion
 presets, macro donut, nutrition table, collapsible NEVO nutrient sections, ingredients,
-favourite heart, source line); own product; progress (weight line chart with goal, BMI, 7-day
+favourite heart, source line, edit button on recipes); own product; recipe editor (name,
+portions, optional cooked weight, ingredients from a search dialog, live per-portion values); progress (weight line chart with goal, BMI, 7-day
 calorie and water bars, history); profile (target card, date picker). Shared pieces in
 `ui/Components.kt`; food-group emoji in `categoryEmoji()`.
 
@@ -171,13 +198,14 @@ Postgres stays on loopback.
 
 ## Next
 
-1. Install the 0.2.0 APK on Cindy's phone too.
-2. Frida and BLS importers (Danish and German basics, with names in those languages).
-3. Own recipes made of foods (portion = share of the total), shared between both users;
-   NEVO's composite foods already show their ingredients.
-4. Fasting timer, copy a meal from yesterday, streaks, then Health Connect (steps/activity ->
-   TDEE adjustment).
-5. Round OFF nutrient floats at import (9.100000381 g).
+Done 2026-10-19: recipes, copy a meal, fasting timer, streaks, Frida + BLS, OFF rounding.
+
+1. Health Connect: steps/activity -> TDEE adjustment (needs a permission screen and a Play
+   health-permissions declaration).
+2. Fasting history on the progress screen; a notification when the fasting goal is reached.
+3. Search in the user's own language first (a Dutch user now also sees Danish/German names when
+   a word matches).
+4. UI strings to `strings.xml` (+ `values-da`, `values-de`) if Cindy wants Danish.
 
 ## Conventions
 
