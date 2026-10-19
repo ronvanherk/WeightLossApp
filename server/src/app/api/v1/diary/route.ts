@@ -2,9 +2,8 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDay, parseDay } from "@/lib/dates";
-import { displayName } from "@/lib/foods";
+import { foodValues, MealEnum, QuickValues, quickValues, toApiEntry } from "@/lib/diary";
 import { handler, HttpError, json, parseBody } from "@/lib/http";
-import { portion } from "@/lib/nutrition";
 import { streakOf } from "@/lib/streak";
 import { localeOf, targetFor } from "@/lib/targets";
 
@@ -24,51 +23,55 @@ export const GET = handler(async (req: Request) => {
     db.waterEntry.findUnique({ where: { userId_date: { userId, date: day } } }),
     streakOf(userId, today),
   ]);
-  const totals = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+  const totals = { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, saturatedFat: 0, salt: 0 };
   for (const e of entries) {
     totals.kcal += e.kcal;
     totals.protein += e.protein;
     totals.carbs += e.carbs;
     totals.fat += e.fat;
+    // Unknown counts as nothing; a quick entry or a sparse product lowers these a little.
+    totals.fiber += e.fiber ?? 0;
+    totals.sugar += e.sugar ?? 0;
+    totals.saturatedFat += e.saturatedFat ?? 0;
+    totals.salt += e.salt ?? 0;
   }
   const r = (v: number) => Math.round(v * 10) / 10;
   return json({
     date: formatDay(day),
-    entries: entries.map((e) => ({
-      id: e.id,
-      meal: e.meal,
-      foodId: e.foodId,
-      name: displayName(e.food, locale),
-      brand: e.food.brand,
-      category: e.food.category,
-      unit: e.food.unit,
-      grams: e.grams,
-      kcal: e.kcal,
-      protein: e.protein,
-      carbs: e.carbs,
-      fat: e.fat,
-    })),
-    totals: { kcal: Math.round(totals.kcal), protein: r(totals.protein), carbs: r(totals.carbs), fat: r(totals.fat) },
+    entries: entries.map((e) => toApiEntry(e, locale)),
+    totals: {
+      kcal: Math.round(totals.kcal),
+      protein: r(totals.protein),
+      carbs: r(totals.carbs),
+      fat: r(totals.fat),
+      fiber: r(totals.fiber),
+      sugar: r(totals.sugar),
+      saturatedFat: r(totals.saturatedFat),
+      salt: Math.round(totals.salt * 100) / 100,
+    },
     target,
     waterMl: water?.ml ?? 0,
     streak,
   });
 });
 
-const Body = z.object({
-  date: z.string(),
-  meal: z.enum(["BREAKFAST", "LUNCH", "DINNER", "SNACK"]),
-  foodId: z.number().int().positive(),
-  grams: z.number().positive().max(5000),
-});
+// A food and an amount, or a quick entry: a name and typed-in kcal.
+const Body = z.union([
+  z.object({ date: z.string(), meal: MealEnum, foodId: z.number().int().positive(), grams: z.number().positive().max(5000) }),
+  QuickValues.extend({ date: z.string(), meal: MealEnum }),
+]);
 
 export const POST = handler(async (req: Request) => {
   const userId = await requireUser(req);
   const body = await parseBody(req, Body);
-  const food = await db.food.findUnique({ where: { id: body.foodId } });
-  if (!food) throw new HttpError(404, "no such food");
-  const entry = await db.diaryEntry.create({
-    data: { userId, date: parseDay(body.date), meal: body.meal, foodId: food.id, grams: body.grams, ...portion(food, body.grams) },
-  });
+  let values;
+  if ("foodId" in body) {
+    const food = await db.food.findUnique({ where: { id: body.foodId } });
+    if (!food) throw new HttpError(404, "no such food");
+    values = foodValues(food, body.grams);
+  } else {
+    values = quickValues(body);
+  }
+  const entry = await db.diaryEntry.create({ data: { userId, date: parseDay(body.date), meal: body.meal, ...values } });
   return json({ id: entry.id }, 201);
 });

@@ -38,6 +38,12 @@ export interface DailyTarget {
   steps: number | null;
   /** Extra kcal for steps beyond what the activity level already counts. */
   stepsKcal: number;
+  /** At least this much fiber. */
+  fiberG: number;
+  /** At most this much total sugar, saturated fat and salt. */
+  sugarMaxG: number;
+  saturatedFatMaxG: number;
+  saltMaxG: number;
 }
 
 /**
@@ -81,6 +87,13 @@ export function dailyTarget(i: TargetInput): DailyTarget {
     clamped: planned < MIN_KCAL[i.sex],
     steps: i.steps ?? null,
     stepsKcal: extra,
+    // 14 g fiber per 1000 kcal of what the body uses (not of a diet's lower target), 25 g at least.
+    fiberG: Math.max(25, Math.round(tdee * 0.014)),
+    // Total sugars (fruit and milk included): the EU reference intake, 90 g at 2000 kcal, so 18%.
+    sugarMaxG: Math.round((kcal * 0.18) / 4),
+    // Saturated fat under 10% of energy; salt 6 g (Gezondheidsraad).
+    saturatedFatMaxG: Math.round((kcal * 0.1) / 9),
+    saltMaxG: 6,
   };
 }
 
@@ -91,9 +104,23 @@ export interface Per100 {
   fat: number | null;
 }
 
+export interface Per100Extras {
+  fiber: number | null;
+  sugar: number | null;
+  saturatedFat: number | null;
+  salt: number | null;
+}
+
 /** Nutrients for a logged portion, from per-100g values. */
 export function portion(food: Per100, grams: number) {
   const f = grams / 100;
   const r = (v: number | null) => Math.round((v ?? 0) * f * 10) / 10;
   return { kcal: Math.round(food.kcal * f), protein: r(food.protein), carbs: r(food.carbs), fat: r(food.fat) };
+}
+
+/** Fiber, sugar, saturated fat and salt for a portion; null where the food does not say. */
+export function portionExtras(food: Per100Extras, grams: number) {
+  const f = grams / 100;
+  const r = (v: number | null, digits = 1) => (v == null ? null : Math.round(v * f * 10 ** digits) / 10 ** digits);
+  return { fiber: r(food.fiber), sugar: r(food.sugar), saturatedFat: r(food.saturatedFat), salt: r(food.salt, 2) };
 }

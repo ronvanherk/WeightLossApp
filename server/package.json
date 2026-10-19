@@ -11,6 +11,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "user:create": "tsx scripts/create-user.ts",
+    "user:household": "tsx scripts/household.ts",
     "import:nevo": "tsx scripts/import-nevo.ts",
     "import:off": "tsx scripts/import-off.ts",
     "import:frida": "tsx scripts/import-frida.ts",

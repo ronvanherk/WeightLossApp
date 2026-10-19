@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { foodValues, MealEnum, QuickValues, quickValues } from "@/lib/diary";
 import { handler, HttpError, json, parseBody, parseId } from "@/lib/http";
-import { portion } from "@/lib/nutrition";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -13,21 +13,30 @@ async function ownEntry(userId: number, ctx: Ctx) {
   return entry;
 }
 
-const Patch = z.object({
+// grams for a food entry; name and values for a quick entry.
+const Patch = QuickValues.partial().extend({
   grams: z.number().positive().max(5000).optional(),
-  meal: z.enum(["BREAKFAST", "LUNCH", "DINNER", "SNACK"]).optional(),
+  meal: MealEnum.optional(),
 });
 
 export const PATCH = handler(async (req: Request, ctx: Ctx) => {
   const userId = await requireUser(req);
   const entry = await ownEntry(userId, ctx);
   const body = await parseBody(req, Patch);
-  const grams = body.grams ?? entry.grams;
-  await db.diaryEntry.update({
-    where: { id: entry.id },
+  const meal = body.meal ?? entry.meal;
+  if (entry.food) {
     // Recomputed from the food as it is now; the snapshot only protects untouched entries.
-    data: { meal: body.meal ?? entry.meal, grams, ...portion(entry.food, grams) },
-  });
+    await db.diaryEntry.update({ where: { id: entry.id }, data: { meal, ...foodValues(entry.food, body.grams ?? entry.grams) } });
+  } else {
+    const values = quickValues({
+      name: body.name ?? entry.name ?? "?",
+      kcal: body.kcal ?? entry.kcal,
+      protein: body.protein ?? entry.protein,
+      carbs: body.carbs ?? entry.carbs,
+      fat: body.fat ?? entry.fat,
+    });
+    await db.diaryEntry.update({ where: { id: entry.id }, data: { meal, ...values } });
+  }
   return json({ ok: true });
 });
 

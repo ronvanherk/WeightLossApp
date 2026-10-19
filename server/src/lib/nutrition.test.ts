@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bmr, dailyTarget, portion } from "./nutrition";
+import { bmr, dailyTarget, portion, portionExtras } from "./nutrition";
 
 describe("bmr", () => {
   it("matches Mifflin-St Jeor reference values", () => {
@@ -38,6 +38,16 @@ describe("dailyTarget", () => {
     expect(plain.steps).toBeNull();
   });
 
+  it("sets limits for fiber, sugar, saturated fat and salt", () => {
+    const t = dailyTarget({ ...base, weeklyLossKg: 0.5 });
+    expect(t.fiberG).toBe(35); // 2490 * 0.014
+    expect(t.sugarMaxG).toBe(87); // 1940 * 0.18 / 4
+    expect(t.saturatedFatMaxG).toBe(22); // 1940 * 0.1 / 9
+    expect(t.saltMaxG).toBe(6);
+    const small = dailyTarget({ ...base, sex: "FEMALE", weightKg: 60, heightCm: 160, goalWeightKg: 55, activity: "SEDENTARY", weeklyLossKg: 1 });
+    expect(small.fiberG).toBe(25);
+  });
+
   it("splits macros 25/30/45", () => {
     const t = dailyTarget({ ...base, weeklyLossKg: 0.5 });
     expect(t.proteinG * 4 + t.fatG * 9 + t.carbsG * 4).toBeGreaterThan(t.kcal - 10);
@@ -48,5 +58,16 @@ describe("dailyTarget", () => {
 describe("portion", () => {
   it("scales per-100g values", () => {
     expect(portion({ kcal: 250, protein: 10, carbs: null, fat: 3.4 }, 150)).toEqual({ kcal: 375, protein: 15, carbs: 0, fat: 5.1 });
+  });
+});
+
+describe("portionExtras", () => {
+  it("scales known values and keeps unknown ones null", () => {
+    expect(portionExtras({ fiber: 6.5, sugar: null, saturatedFat: 1.23, salt: 1.234 }, 50)).toEqual({
+      fiber: 3.3,
+      sugar: null,
+      saturatedFat: 0.6,
+      salt: 0.62,
+    });
   });
 });

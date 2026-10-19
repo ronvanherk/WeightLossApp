@@ -53,6 +53,9 @@ model User {
   favorites    Favorite[]
   fasts        Fast[]
   steps        DailySteps[]
+  savedMeals   SavedMeal[]
+  // Users with the same household id can put meals in each other's diary. Set with user:household.
+  householdId  Int?          @map("household_id")
 
   @@map("app_user")
 }
@@ -125,14 +128,21 @@ model DiaryEntry {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   date      DateTime @db.Date
   meal      Meal
-  foodId    Int      @map("food_id")
-  food      Food     @relation(fields: [foodId], references: [id], onDelete: Restrict)
+  // Null for a quick entry: kcal (and maybe macros) typed in, with only a name; grams is 0 then.
+  foodId    Int?     @map("food_id")
+  food      Food?    @relation(fields: [foodId], references: [id], onDelete: Restrict)
+  name      String?
   grams     Float
   // Snapshot at logging time, so a re-import of the food table never rewrites history.
   kcal      Float
   protein   Float
   carbs     Float
   fat       Float
+  // Null when the food (or the quick entry) does not say.
+  fiber        Float?
+  sugar        Float?
+  saturatedFat Float?  @map("saturated_fat")
+  salt         Float?
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([userId, date])
@@ -221,4 +231,18 @@ model DailySteps {
 
   @@unique([userId, date])
   @@map("daily_steps")
+}
+
+// A combination this user logs often ("my breakfast"), added to a meal in one go.
+// items: [{ foodId, grams }] or, for quick entries, [{ name, kcal, protein, carbs, fat }].
+model SavedMeal {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  items     Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("saved_meal")
 }

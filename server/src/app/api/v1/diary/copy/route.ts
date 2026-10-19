@@ -2,10 +2,9 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseDay } from "@/lib/dates";
+import { MealEnum, scaledValues } from "@/lib/diary";
 import { handler, json, parseBody } from "@/lib/http";
-import { portion } from "@/lib/nutrition";
 
-const MealEnum = z.enum(["BREAKFAST", "LUNCH", "DINNER", "SNACK"]);
 const Body = z.object({
   from: z.string(),
   to: z.string(),
@@ -23,15 +22,6 @@ export const POST = handler(async (req: Request) => {
     orderBy: { createdAt: "asc" },
   });
   const to = parseDay(body.to);
-  await db.diaryEntry.createMany({
-    data: source.map((e) => ({
-      userId,
-      date: to,
-      meal: e.meal,
-      foodId: e.foodId,
-      grams: e.grams,
-      ...portion(e.food, e.grams),
-    })),
-  });
+  await db.diaryEntry.createMany({ data: source.map((e) => ({ userId, date: to, meal: e.meal, ...scaledValues(e) })) });
   return json({ copied: source.length });
 });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDay, parseDay } from "@/lib/dates";
+import { householdOf } from "@/lib/diary";
 import { LOCALES } from "@/lib/foods";
 import { handler, HttpError, json, parseBody } from "@/lib/http";
 import { targetFor } from "@/lib/targets";
@@ -24,6 +25,7 @@ export const GET = handler(async (req: Request) => {
       locale: p.locale,
     },
     target: await targetFor(userId, today),
+    household: await householdOf(userId),
   });
 });
 

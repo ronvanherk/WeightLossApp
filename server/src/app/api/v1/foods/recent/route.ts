@@ -14,7 +14,7 @@ export const GET = handler(async (req: Request) => {
   const rows = await db.$queryRaw<{ food_id: number; grams: number }[]>`
     SELECT food_id, (array_agg(grams ORDER BY created_at DESC))[1] AS grams
     FROM diary_entry
-    WHERE user_id = ${userId}
+    WHERE user_id = ${userId} AND food_id IS NOT NULL
     GROUP BY food_id
     ORDER BY bool_or(meal::text = ${meal ?? ""}) DESC, max(created_at) DESC
     LIMIT 40`;
