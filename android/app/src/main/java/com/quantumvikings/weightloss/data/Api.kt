@@ -66,6 +66,9 @@ interface Api {
     @POST("api/v1/weight")
     suspend fun saveWeight(@Body body: WeightDto): OkResponse
 
+    @PUT("api/v1/steps")
+    suspend fun saveSteps(@Body body: StepsDto): OkResponse
+
     @PUT("api/v1/water")
     suspend fun saveWater(@Body body: WaterDto): OkResponse
 
@@ -126,6 +129,9 @@ data class TargetDto(
     val fatG: Int,
     val carbsG: Int,
     val clamped: Boolean,
+    val steps: Int? = null,
+    /** Already included in [kcal]. */
+    val stepsKcal: Int = 0,
 )
 
 @Serializable data class MeResponse(val user: UserDto, val profile: ProfileDto? = null, val target: TargetDto? = null)
@@ -219,6 +225,7 @@ data class CreateFoodRequest(
 )
 
 @Serializable data class WaterDto(val date: String, val ml: Int)
+@Serializable data class StepsDto(val date: String, val steps: Int)
 
 @Serializable
 data class DaySummaryDto(
@@ -229,6 +236,7 @@ data class DaySummaryDto(
     val fat: Double,
     val waterMl: Int,
     val targetKcal: Int? = null,
+    val steps: Int? = null,
 )
 
 @Serializable data class SummaryResponse(val days: List<DaySummaryDto>)

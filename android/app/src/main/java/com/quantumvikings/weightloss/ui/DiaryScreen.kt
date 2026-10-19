@@ -1,5 +1,9 @@
 package com.quantumvikings.weightloss.ui
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -61,6 +65,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.health.connect.client.PermissionController
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -71,7 +79,10 @@ import com.quantumvikings.weightloss.data.CopyRequest
 import com.quantumvikings.weightloss.data.DaySummaryDto
 import com.quantumvikings.weightloss.data.DiaryResponse
 import com.quantumvikings.weightloss.data.EntryDto
+import com.quantumvikings.weightloss.data.FastingAlarm
 import com.quantumvikings.weightloss.data.FastingResponse
+import com.quantumvikings.weightloss.data.HealthSteps
+import com.quantumvikings.weightloss.data.StepsDto
 import com.quantumvikings.weightloss.data.StartFastRequest
 import com.quantumvikings.weightloss.data.UpdateFastRequest
 import com.quantumvikings.weightloss.data.Session
@@ -85,6 +96,7 @@ import com.quantumvikings.weightloss.ui.theme.ProteinColor
 import com.quantumvikings.weightloss.ui.theme.WaterColor
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
+import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.time.LocalDate
@@ -117,15 +129,43 @@ fun DiaryScreen(
     var picking by remember { mutableStateOf(false) }
     var fasting by remember { mutableStateOf<FastingResponse?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val health = remember { HealthSteps(context.applicationContext) }
+    var stepsConnected by remember { mutableStateOf<Boolean?>(null) }
+    var steps by remember { mutableStateOf<Long?>(null) }
+    val connectSteps = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { granted ->
+        stepsConnected = granted.containsAll(health.permissions)
+        reload++
+    }
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    // Back from Samsung Health or a walk: fresh steps and target. The first resume is the first load.
+    var resumed by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (resumed) reload++ else resumed = true
+    }
     val monday = day.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
     LaunchedEffect(date, reload) {
+        // Steps first, so the target that comes back already includes them.
+        stepsConnected = runCatching { health.granted() }.getOrDefault(false)
+        steps = null
+        if (stepsConnected == true && !day.isAfter(LocalDate.now())) {
+            steps = runCatching { health.steps(day) }.getOrNull()
+            steps?.let { n -> runCatching { session.api.saveSteps(StepsDto(date, n.toInt())) } }
+        }
         runCatching { session.api.diary(date, LocalDate.now().toString()) }
             .onSuccess { diary = it; error = null }
             .onFailure { error = session.describe(it) }
     }
     LaunchedEffect(reload) {
         runCatching { session.api.fasting() }.onSuccess { fasting = it }
+    }
+    // The phone reminds at the end of the running fast, wherever it was started or changed.
+    LaunchedEffect(fasting) {
+        val f = fasting ?: return@LaunchedEffect
+        val c = f.current
+        if (c == null) FastingAlarm.cancel(context)
+        else FastingAlarm.schedule(context, Instant.parse(c.startedAt).plus(Duration.ofHours(c.goalHours.toLong())), c.goalHours)
     }
     LaunchedEffect(monday, reload) {
         runCatching { session.api.summary(monday.toString(), monday.plusDays(6).toString()) }
@@ -217,6 +257,19 @@ fun DiaryScreen(
                 }
             }
             item(key = "water") { WaterCard(ml = d.waterMl, onChange = ::setWater) }
+            if ((health.available || health.installable) && !day.isAfter(LocalDate.now())) {
+                item(key = "steps") {
+                    StepsCard(
+                        connected = stepsConnected,
+                        installable = health.installable,
+                        steps = steps,
+                        stepsKcal = d.target?.stepsKcal ?: 0,
+                        onConnect = { connectSteps.launch(health.permissions) },
+                        onInstall = { runCatching { context.startActivity(health.installIntent()) } },
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+            }
             val f = fasting
             if (f != null && day == LocalDate.now()) {
                 item(key = "fasting") {
@@ -224,6 +277,9 @@ fun DiaryScreen(
                         current = f.current,
                         last = f.recent.firstOrNull(),
                         onStart = { goal, at ->
+                            if (Build.VERSION.SDK_INT >= 33 && !FastingAlarm.canNotify(context)) {
+                                askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
                             fast { session.api.startFast(StartFastRequest(goal, at?.truncatedTo(ChronoUnit.SECONDS)?.toString())) }
                         },
                         onAdjustStart = { at ->

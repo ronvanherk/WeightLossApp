@@ -88,4 +88,5 @@ dependencies {
     implementation(libs.retrofit.kotlinx.serialization)
     implementation(libs.okhttp)
     implementation(libs.play.services.code.scanner)
+    implementation(libs.health.connect)
 }

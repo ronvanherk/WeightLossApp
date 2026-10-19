@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.quantumvikings.weightloss.data.DaySummaryDto
+import com.quantumvikings.weightloss.data.FastDto
 import com.quantumvikings.weightloss.data.MeResponse
 import com.quantumvikings.weightloss.data.Session
 import com.quantumvikings.weightloss.data.WeightDto
@@ -59,7 +60,10 @@ import com.quantumvikings.weightloss.ui.theme.HeaderGradient
 import com.quantumvikings.weightloss.ui.theme.Orange
 import com.quantumvikings.weightloss.ui.theme.WaterColor
 import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
@@ -73,6 +77,7 @@ fun ProgressScreen(session: Session) {
     var me by remember { mutableStateOf<MeResponse?>(null) }
     var weights by remember { mutableStateOf<List<WeightDto>>(emptyList()) }
     var week by remember { mutableStateOf<List<DaySummaryDto>>(emptyList()) }
+    var fasts by remember { mutableStateOf<List<FastDto>>(emptyList()) }
     var months by remember { mutableStateOf(3L) }
     var reload by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf(false) }
@@ -83,6 +88,7 @@ fun ProgressScreen(session: Session) {
     LaunchedEffect(reload) {
         runCatching { session.api.me() }.onSuccess { me = it }.onFailure { error = session.describe(it) }
         runCatching { session.api.summary(today.minusDays(6).toString(), today.toString()) }.onSuccess { week = it.days }
+        runCatching { session.api.fasting() }.onSuccess { fasts = it.recent }
     }
     LaunchedEffect(months, reload) {
         runCatching { session.api.weights(today.minusMonths(months).toString()) }
@@ -210,6 +216,45 @@ fun ProgressScreen(session: Session) {
                 }
                 Spacer(Modifier.height(12.dp))
                 BarChart(week.map { it.waterMl / 1000.0 }, week.map { 2.0 }, WaterColor, week.map { dayLetter(it.date) })
+            }
+
+            // Steps this week, once Health Connect has delivered any
+            if (week.any { (it.steps ?: 0) > 0 }) {
+                SectionCard {
+                    val walked = week.mapNotNull { it.steps }.filter { it > 0 }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Stappen, 7 dagen", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Pill("gem. ${java.text.NumberFormat.getIntegerInstance(java.util.Locale.GERMANY).format(walked.sum() / walked.size)}", StepsColor)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    BarChart(week.map { (it.steps ?: 0).toDouble() }, week.map { 10_000.0 }, StepsColor, week.map { dayLetter(it.date) })
+                }
+            }
+
+            // Fasting: the last finished fasts against their goal
+            if (fasts.isNotEmpty()) {
+                SectionCard {
+                    val shown = fasts.take(7).reversed()
+                    val hours = shown.map { f -> Duration.between(Instant.parse(f.startedAt), Instant.parse(f.endedAt!!)).toMinutes() / 60.0 }
+                    val reached = fasts.count { f -> Duration.between(Instant.parse(f.startedAt), Instant.parse(f.endedAt!!)).toMinutes() >= f.goalHours * 60L }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Vasten", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Pill("$reached van ${fasts.size} gehaald", FastingColor)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    BarChart(
+                        hours,
+                        shown.map { it.goalHours.toDouble() },
+                        FastingColor,
+                        shown.map { dayLetter(Instant.parse(it.startedAt).atZone(ZoneId.systemDefault()).toLocalDate().toString()) },
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Gemiddeld ${fmt(Math.round(hours.average() * 10) / 10.0)} uur over de laatste ${shown.size} keer",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             // History
