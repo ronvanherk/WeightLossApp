@@ -125,19 +125,26 @@ export async function upsertFoods(rows: FoodRow[]): Promise<number> {
       search_text = EXCLUDED.search_text, updated_at = now()`;
 }
 
+/** The name column per user language; fixed strings, safe to put into SQL. */
+const NAME_COLUMN: Record<string, string> = { nl: "name_nl", da: "name_da", de: "name_de" };
+
 /**
- * Every word must occur (ILIKE, served by the trigram index); best match first,
- * official tables before branded products on a tie.
+ * Every word must occur (ILIKE, served by the trigram index). Foods where every word occurs in
+ * the user's own language (name, brand or synonyms) come first, so a Dutch "kaas" is not buried
+ * under a Danish or German name that happens to match; then best match, official tables before
+ * branded products on a tie.
  */
-export async function searchFoods(query: string, limit = 25): Promise<Food[]> {
+export async function searchFoods(query: string, limit = 25, locale = "nl"): Promise<Food[]> {
   const q = query.toLowerCase().replace(/\s+/g, " ").trim();
   const words = q.split(" ").filter((w) => w.length >= 2);
   if (words.length === 0) return [];
   const patterns = words.map((w) => `%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+  const own = Prisma.raw(NAME_COLUMN[locale] ?? "name_nl");
   const ids = await db.$queryRaw<{ id: number }[]>`
     SELECT id FROM food
     WHERE search_text ILIKE ALL (${patterns}::text[])
-    ORDER BY word_similarity(${q}, search_text) DESC,
+    ORDER BY concat_ws(' ', brand, ${own}, details->>'synonyms') ILIKE ALL (${patterns}::text[]) DESC,
+             word_similarity(${q}, search_text) DESC,
              CASE WHEN source IN ('NEVO', 'FRIDA', 'BLS') THEN 0 WHEN source IN ('CUSTOM', 'RECIPE') THEN 1 ELSE 2 END,
              length(search_text)
     LIMIT ${Prisma.raw(String(Math.min(Math.max(limit, 1), 100)))}`;

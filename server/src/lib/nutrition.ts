@@ -22,6 +22,8 @@ export interface TargetInput {
   activity: ActivityLevel;
   goalWeightKg: number;
   weeklyLossKg: number;
+  /** Synced from the phone; null when unknown. */
+  steps?: number | null;
 }
 
 export interface DailyTarget {
@@ -33,6 +35,27 @@ export interface DailyTarget {
   fatG: number;
   /** True when the minimum, not the plan, set the target. */
   clamped: boolean;
+  steps: number | null;
+  /** Extra kcal for steps beyond what the activity level already counts. */
+  stepsKcal: number;
+}
+
+/**
+ * Steps the activity level already assumes on an average day. Only steps above this earn extra
+ * kcal, so a walk is not counted twice.
+ */
+export const BASELINE_STEPS: Record<ActivityLevel, number> = {
+  SEDENTARY: 3000,
+  LIGHT: 5000,
+  MODERATE: 7500,
+  ACTIVE: 10000,
+  VERY_ACTIVE: 12000,
+};
+
+/** Walking costs about 0.5 kcal per kg body weight per 1000 steps. */
+export function stepsKcal(steps: number | null | undefined, weightKg: number, activity: ActivityLevel): number {
+  if (!steps) return 0;
+  return Math.round(Math.max(0, steps - BASELINE_STEPS[activity]) * weightKg * 0.0005);
 }
 
 /** Mifflin-St Jeor resting energy expenditure. */
@@ -44,7 +67,8 @@ export function dailyTarget(i: TargetInput): DailyTarget {
   const rest = bmr(i.sex, i.weightKg, i.heightCm, i.age);
   const tdee = rest * ACTIVITY_FACTOR[i.activity];
   const losing = i.weightKg > i.goalWeightKg && i.weeklyLossKg > 0;
-  const planned = losing ? tdee - (i.weeklyLossKg * KCAL_PER_KG) / 7 : tdee;
+  const extra = stepsKcal(i.steps, i.weightKg, i.activity);
+  const planned = (losing ? tdee - (i.weeklyLossKg * KCAL_PER_KG) / 7 : tdee) + extra;
   const kcal = Math.max(planned, MIN_KCAL[i.sex]);
   // Split 25% protein / 30% fat / 45% carbs; 4 / 9 / 4 kcal per gram.
   return {
@@ -55,6 +79,8 @@ export function dailyTarget(i: TargetInput): DailyTarget {
     fatG: Math.round((kcal * 0.3) / 9),
     carbsG: Math.round((kcal * 0.45) / 4),
     clamped: planned < MIN_KCAL[i.sex],
+    steps: i.steps ?? null,
+    stepsKcal: extra,
   };
 }
 

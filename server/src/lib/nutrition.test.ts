@@ -29,6 +29,15 @@ describe("dailyTarget", () => {
     expect(t.clamped).toBe(true);
   });
 
+  it("adds kcal for steps above the activity level's baseline", () => {
+    const plain = dailyTarget({ ...base, weeklyLossKg: 0.5 });
+    const walked = dailyTarget({ ...base, weeklyLossKg: 0.5, steps: 13000 });
+    expect(walked.stepsKcal).toBe(360); // (13000 - 5000) * 90 * 0.0005
+    expect(walked.kcal).toBe(plain.kcal + 360);
+    expect(dailyTarget({ ...base, weeklyLossKg: 0.5, steps: 4000 }).stepsKcal).toBe(0);
+    expect(plain.steps).toBeNull();
+  });
+
   it("splits macros 25/30/45", () => {
     const t = dailyTarget({ ...base, weeklyLossKg: 0.5 });
     expect(t.proteinG * 4 + t.fatG * 9 + t.carbsG * 4).toBeGreaterThan(t.kcal - 10);

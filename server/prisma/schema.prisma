@@ -52,6 +52,7 @@ model User {
   water        WaterEntry[]
   favorites    Favorite[]
   fasts        Fast[]
+  steps        DailySteps[]
 
   @@map("app_user")
 }
@@ -208,4 +209,16 @@ model Fast {
 
   @@index([userId, startedAt])
   @@map("fast")
+}
+
+// Steps walked on a day, synced from Health Connect by the app; raises that day's target.
+model DailySteps {
+  id     Int      @id @default(autoincrement())
+  userId Int      @map("user_id")
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date   DateTime @db.Date
+  steps  Int
+
+  @@unique([userId, date])
+  @@map("daily_steps")
 }

@@ -38,12 +38,16 @@ android/   Kotlin + Compose app talking to server/ over /api/v1
   editing, PUT, DELETE; 409 when logged or used in another recipe), `fasting` (GET running + last
   14, POST start), `fasting/[id]` (PATCH `goalHours`/`startedAt`/`end: true`, DELETE),
   `weight` (GET list, POST upserts one per day), `water` (GET/PUT the day's total ml),
-  `summary?from=&to=` (per day kcal, macros, water and that day's target; max 366 days). Errors are `{ "error": "..." }` with a status code.
+  `steps` (PUT `{date, steps}`, the day's total from Health Connect),
+  `summary?from=&to=` (per day kcal, macros, water, steps and that day's target; max 366 days). Errors are `{ "error": "..." }` with a status code.
   Another user's diary entry answers 404, not 403.
 - **Targets** (`src/lib/nutrition.ts`): Mifflin-St Jeor BMR x activity factor = TDEE, minus
   `weeklyLossKg x 7700 / 7`. Floor 1500 kcal (men) / 1200 (women); `clamped: true` tells the
   app the floor, not the plan, set the number. Macros split 25% protein / 30% fat / 45% carbs.
   The target uses the latest weight on or before the day; no profile or no weight = `null`.
+  **Steps** raise it: steps above a baseline for the activity level (sedentary 3000, light 5000,
+  moderate 7500, active 10000, very active 12000; the level already counts an ordinary day) earn
+  0.0005 kcal x kg body weight each (`stepsKcal()`, reported as `target.stepsKcal`).
 - **Diary entries snapshot kcal/macros** at logging time so re-importing a food table never
   rewrites history. PATCHing grams recomputes from the current food row.
 - **Custom products are shared** between both users (the point: Cindy's lasagne once, used by
@@ -57,6 +61,8 @@ android/   Kotlin + Compose app talking to server/ over /api/v1
 - **Streak** (`src/lib/streak.ts`): days in a row with an entry, up to `today` from the phone
   (the server runs on UTC); yesterday counts while today is still empty.
 - **Fasting**: table `fast`, one open row (`ended_at` null) per user at most.
+- **Search language**: foods where every query word occurs in the user's own language (name in
+  `profile.locale`, brand, synonyms) rank first, then the general similarity order.
 
 ### Food data
 
@@ -125,12 +131,14 @@ per macro and per meal, light status bar icons everywhere), bottom navigation Da
 Voortgang / Profiel. Screens: login; diary (week strip, calorie ring, macro bars, meal cards with
 an advised share of the day 25/35/30/10 %, water glasses, bottom sheet to edit/move/delete an
 entry, "same as yesterday" on an empty meal, a fasting card on today with goal chips, live
-progress and a start-time picker, a 🔥 streak pill in the header from 2 days); add food (recent,
+progress and a start-time picker, a 🔥 streak pill in the header from 2 days, a steps card that
+connects Health Connect); add food (recent,
 favourites and recipes tabs, search, one-tap add with last/serving amount,
 **barcode scan via Play services code scanner**, so no CAMERA permission); food detail (portion
 presets, macro donut, nutrition table, collapsible NEVO nutrient sections, ingredients,
 favourite heart, source line, edit button on recipes); own product; recipe editor (name,
-portions, optional cooked weight, ingredients from a search dialog, live per-portion values); progress (weight line chart with goal, BMI, 7-day
+portions, optional cooked weight, ingredients from a search dialog, live per-portion values); progress
+(also steps and fasting charts once there is data) (weight line chart with goal, BMI, 7-day
 calorie and water bars, history); profile (target card, date picker). Shared pieces in
 `ui/Components.kt`; food-group emoji in `categoryEmoji()`.
 
@@ -138,6 +146,15 @@ calorie and water bars, history); profile (target card, date picker). Shared pie
   `./gradlew installDebug -PapiBaseUrl=http://10.0.2.2:3002/` (emulator -> host). Cleartext is
   off in the manifest, so a plain-http local server needs a debug network-security config.
 - The token lives in SharedPreferences; any 401 (except on login) signs out.
+- **Health Connect** (`data/HealthSteps.kt`, connect-client 1.1.0, which needs AGP 8.9.1+): only
+  `READ_STEPS`. The diary reads the shown day's total, PUTs it to `/steps` and then loads the day,
+  so the target already includes it; it reloads on every resume. The manifest has the rationale
+  activity (`PermissionsRationaleActivity`, opens the privacy policy) and the Android 14
+  `VIEW_PERMISSION_USAGE` alias that Health Connect requires. Play needs the Health Connect
+  declaration in App content for every release that requests a health permission.
+- **Fasting notification** (`data/FastingAlarm.kt`): an inexact `setAndAllowWhileIdle` alarm at
+  start + goal, re-armed whenever the diary loads the fast and after a reboot (`BootReceiver`);
+  `POST_NOTIFICATIONS` is asked when a fast is started. No exact-alarm permission on purpose.
 - UI strings are Dutch and inline for now; move to `strings.xml` (+ `values-da`, `values-de`)
   if Cindy or anyone else wants another language. The food-name language is separate and
   already per user (`profile.locale`).
@@ -200,12 +217,11 @@ Postgres stays on loopback.
 
 Done 2026-10-19: recipes, copy a meal, fasting timer, streaks, Frida + BLS, OFF rounding.
 
-1. Health Connect: steps/activity -> TDEE adjustment (needs a permission screen and a Play
-   health-permissions declaration).
-2. Fasting history on the progress screen; a notification when the fasting goal is reached.
-3. Search in the user's own language first (a Dutch user now also sees Danish/German names when
-   a word matches).
-4. UI strings to `strings.xml` (+ `values-da`, `values-de`) if Cindy wants Danish.
+Done 2026-10-19 (afternoon): Health Connect steps, fasting notification and history, own-language
+search first.
+
+1. Exercise sessions from Health Connect (cycling, gym) next to steps.
+2. UI strings to `strings.xml` only if someone needs another language (Cindy is Dutch).
 
 ## Conventions
 

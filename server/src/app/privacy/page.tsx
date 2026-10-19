@@ -19,6 +19,12 @@ export default function Privacy() {
         <li>Accountgegevens: naam, e-mailadres en een versleuteld wachtwoord.</li>
         <li>Profiel: geslacht, geboortedatum, lengte, activiteitsniveau, streefgewicht en gewenst tempo.</li>
         <li>Gezondheidsgegevens: gewichtsmetingen, wat je eet en drinkt, hoeveel water je drinkt en de begin- en eindtijden van het vasten dat je bijhoudt.</li>
+        <li>
+          Stappen: alleen als je Health Connect koppelt, leest de app je totaal aantal stappen per dag en bewaart dat
+          getal op de server. Het verhoogt het calorieëndoel van die dag. De app leest verder niets uit Health Connect,
+          schrijft er niets in en deelt stapgegevens met niemand. Je kunt de toestemming altijd intrekken in Health
+          Connect.
+        </li>
         <li>Producten en recepten die je zelf aanmaakt en producten die je als favoriet markeert.</li>
       </ul>
       <p>De app gebruikt geen advertenties, geen analyse- of trackingdiensten en vraagt geen locatie of contacten op.</p>

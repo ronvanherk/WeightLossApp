@@ -37,6 +37,7 @@ export const GET = handler(async (req: Request) => {
         fat: r(s?.fat),
         waterMl: water.find((w) => w.date.getTime() === d.getTime())?.ml ?? 0,
         targetKcal: targets[i]?.kcal ?? null,
+        steps: targets[i]?.steps ?? null,
       };
     }),
   });

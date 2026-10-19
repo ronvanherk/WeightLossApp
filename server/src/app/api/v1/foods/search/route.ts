@@ -8,6 +8,7 @@ export const GET = handler(async (req: Request) => {
   const url = new URL(req.url);
   const q = url.searchParams.get("q") ?? "";
   const limit = Number(url.searchParams.get("limit") ?? 25) || 25;
-  const [foods, locale] = await Promise.all([searchFoods(q, limit), localeOf(userId)]);
+  const locale = await localeOf(userId);
+  const foods = await searchFoods(q, limit, locale);
   return json({ foods: foods.map((f) => toApi(f, locale)) });
 });
