@@ -39,17 +39,33 @@ android/   Kotlin + Compose app talking to server/ over /api/v1
   14, POST start), `fasting/[id]` (PATCH `goalHours`/`startedAt`/`end: true`, DELETE),
   `weight` (GET list, POST upserts one per day), `water` (GET/PUT the day's total ml),
   `steps` (PUT `{date, steps}`, the day's total from Health Connect),
+  `diary` POST also takes a quick entry `{date, meal, name, kcal, protein?, carbs?, fat?}`,
+  `diary/share` (POST `{date, meal, toUserId, factor, entryIds?}`: my meal into a household
+  member's diary at `factor` times my portion), `household` (GET the other members),
+  `meals` (GET saved meals, POST `{name, date, meal}` saves that meal's entries), `meals/[id]`
+  (DELETE), `meals/[id]/log` (POST `{date, meal}`),
   `summary?from=&to=` (per day kcal, macros, water, steps and that day's target; max 366 days). Errors are `{ "error": "..." }` with a status code.
   Another user's diary entry answers 404, not 403.
 - **Targets** (`src/lib/nutrition.ts`): Mifflin-St Jeor BMR x activity factor = TDEE, minus
   `weeklyLossKg x 7700 / 7`. Floor 1500 kcal (men) / 1200 (women); `clamped: true` tells the
   app the floor, not the plan, set the number. Macros split 25% protein / 30% fat / 45% carbs.
   The target uses the latest weight on or before the day; no profile or no weight = `null`.
+  It also carries limits: fiber at least 14 g per 1000 kcal of TDEE (min 25), total sugars at
+  most 18% of the target kcal (the EU reference intake, 90 g at 2000), saturated fat under 10%,
+  salt 6 g.
   **Steps** raise it: steps above a baseline for the activity level (sedentary 3000, light 5000,
   moderate 7500, active 10000, very active 12000; the level already counts an ordinary day) earn
   0.0005 kcal x kg body weight each (`stepsKcal()`, reported as `target.stepsKcal`).
-- **Diary entries snapshot kcal/macros** at logging time so re-importing a food table never
-  rewrites history. PATCHing grams recomputes from the current food row.
+- **Diary entries snapshot kcal/macros** (and fiber, sugar, saturated fat, salt; null when the
+  food does not say) at logging time so re-importing a food table never rewrites history.
+  PATCHing grams recomputes from the current food row. A **quick entry** has no food
+  (`food_id` null, `name` set, `grams` 0; a CHECK requires one of the two); PATCH edits its name
+  and kcal. Copy, share and saved meals go through `src/lib/diary.ts`.
+- **Household**: `app_user.household_id`; users with the same value may share meals
+  (`pnpm user:household <email> <email>`). Ron and Cindy are household 1 since 2026-10-19; the
+  reviewer account has none. Sharing writes into the other diary but never reads it.
+- **Saved meals** (`saved_meal`, per user): `items` is `[{foodId, grams}]` or quick values;
+  logging recomputes from the foods as they are now.
 - **Custom products are shared** between both users (the point: Cindy's lasagne once, used by
   both). `createdById` records who made it.
 - **Recipes** are `food` rows with source `RECIPE` (`src/lib/recipe-store.ts`): per-100 g values are
@@ -133,7 +149,7 @@ an advised share of the day 25/35/30/10 %, water glasses, bottom sheet to edit/m
 entry, "same as yesterday" on an empty meal, a fasting card on today with goal chips, live
 progress and a start-time picker, a 🔥 streak pill in the header from 2 days, a steps card that
 connects Health Connect); add food (recent,
-favourites and recipes tabs, search, one-tap add with last/serving amount,
+favourites, saved meals and recipes tabs, "only calories" quick entry, search, one-tap add with last/serving amount,
 **barcode scan via Play services code scanner**, so no CAMERA permission); food detail (portion
 presets, macro donut, nutrition table, collapsible NEVO nutrient sections, ingredients,
 favourite heart, source line, edit button on recipes); own product; recipe editor (name,
@@ -152,6 +168,14 @@ calorie and water bars, history); profile (target card, date picker). Shared pie
   activity (`PermissionsRationaleActivity`, opens the privacy policy) and the Android 14
   `VIEW_PERMISSION_USAGE` alias that Health Connect requires. Play needs the Health Connect
   declaration in App content for every release that requests a health permission.
+- **Reminders** (`data/Reminders.kt`): breakfast, lunch, dinner, weigh-in and water, each on/off
+  with a time in Profile, stored in SharedPreferences. Inexact daily alarms; `ReminderReceiver`
+  re-arms tomorrow first, then asks the server (diary / weights of today) and only notifies when
+  the meal is empty, there is no weight, or water is behind 2 l spread over 08:00-22:00.
+  Re-armed on app start and after boot.
+- **Widget** (`widget/DayWidget.kt`, Glance 1.1.1): kcal left today with a bar, water and a
+  "+ glas" button; fetches the day itself, refreshed by the app after the diary loads or water
+  changes, and every 30 minutes.
 - **Fasting notification** (`data/FastingAlarm.kt`): an inexact `setAndAllowWhileIdle` alarm at
   start + goal, re-armed whenever the diary loads the fast and after a reboot (`BootReceiver`);
   `POST_NOTIFICATIONS` is asked when a fast is started. No exact-alarm permission on purpose.
@@ -220,8 +244,16 @@ Done 2026-10-19: recipes, copy a meal, fasting timer, streaks, Frida + BLS, OFF 
 Done 2026-10-19 (afternoon): Health Connect steps, fasting notification and history, own-language
 search first.
 
+Done 2026-10-19 (evening): quick entries, saved meals, sharing a meal within the household,
+reminders, fiber/sugar/saturated fat/salt targets, home screen widget.
+
 1. Exercise sessions from Health Connect (cycling, gym) next to steps.
-2. UI strings to `strings.xml` only if someone needs another language (Cindy is Dutch).
+2. Own targets: macro split (more protein, low-carb), a higher weekend target, a fixed kcal goal.
+3. Body measurements (waist, hips, body fat) with a chart; optional progress photos on our server.
+4. Weekly review: averages, days within target, weight trend; a Sunday notification.
+5. Portion units ("1 slice", "1 cup") where OFF knows a serving size.
+6. Weight from Health Connect (smart scale); dark mode; CSV/PDF export.
+7. UI strings to `strings.xml` only if someone needs another language (Cindy is Dutch).
 
 ## Conventions
 

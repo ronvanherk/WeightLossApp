@@ -53,6 +53,20 @@
         </activity-alias>
 
         <receiver android:name=".data.FastingDoneReceiver" android:exported="false" />
+        <receiver android:name=".data.ReminderReceiver" android:exported="false" />
+
+        <!-- Home screen widget: kcal left today and a water button. -->
+        <receiver
+            android:name=".widget.DayWidgetReceiver"
+            android:exported="true"
+            android:label="Vandaag">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/day_widget_info" />
+        </receiver>
         <receiver android:name=".data.BootReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

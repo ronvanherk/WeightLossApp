@@ -93,6 +93,8 @@ class FastingDoneReceiver : BroadcastReceiver() {
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) FastingAlarm.restore(context)
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        FastingAlarm.restore(context)
+        Reminders.restoreAll(context)
     }
 }

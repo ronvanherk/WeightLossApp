@@ -1,5 +1,9 @@
 package com.quantumvikings.weightloss.ui
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +23,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -42,6 +50,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,9 +60,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.quantumvikings.weightloss.data.FastingAlarm
 import com.quantumvikings.weightloss.data.ProfileDto
+import com.quantumvikings.weightloss.data.Reminders
 import com.quantumvikings.weightloss.data.Session
 import com.quantumvikings.weightloss.data.TargetDto
 import com.quantumvikings.weightloss.ui.theme.CarbsColor
@@ -160,6 +172,14 @@ fun ProfileScreen(session: Session) {
                         Pill("Eiwit ${t.proteinG} g", ProteinColor)
                         Pill("Vet ${t.fatG} g", FatColor)
                     }
+                    if (t.fiberG > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Vezels minstens ${t.fiberG} g · suikers hooguit ${t.sugarMaxG} g · verzadigd vet hooguit ${t.saturatedFatMaxG} g · zout hooguit ${t.saltMaxG} g",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (t.clamped) {
                         Spacer(Modifier.height(8.dp))
                         Text(
@@ -207,6 +227,8 @@ fun ProfileScreen(session: Session) {
                 Spacer(Modifier.height(10.dp))
                 Choice("Taal van productnamen", LOCALES, locale) { locale = it }
             }
+
+            RemindersCard()
 
             message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             Button(enabled = valid, modifier = Modifier.fillMaxWidth().height(52.dp), onClick = {
@@ -277,5 +299,80 @@ private fun Choice(label: String, options: List<Pair<String, String>>, selected:
                 DropdownMenuItem(text = { Text(text) }, onClick = { onSelect(value); open = false })
             }
         }
+    }
+}
+
+private val REMINDER_HINTS = mapOf(
+    Reminders.Kind.BREAKFAST to "als je ontbijt nog leeg is",
+    Reminders.Kind.LUNCH to "als je lunch nog leeg is",
+    Reminders.Kind.DINNER to "als je avondeten nog leeg is",
+    Reminders.Kind.WEIGHT to "als je vandaag nog niet gewogen bent",
+    Reminders.Kind.WATER to "als je achterloopt met water",
+)
+
+/** Each reminder: on/off and a time. Stored on the phone; the alarms are local. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RemindersCard() {
+    val context = LocalContext.current
+    // Bumped after every change, so the rows re-read the stored settings.
+    var version by remember { mutableStateOf(0) }
+    var picking by remember { mutableStateOf<Reminders.Kind?>(null) }
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    SectionCard {
+        Text("Herinneringen", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Alleen als er echt iets te doen is.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        for (kind in Reminders.Kind.entries) {
+            key(version) {
+                val on = Reminders.enabled(context, kind)
+                val minute = Reminders.minute(context, kind)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(kind.label, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            REMINDER_HINTS.getValue(kind),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = { picking = kind }) { Text("%02d:%02d".format(minute / 60, minute % 60)) }
+                    Switch(checked = on, onCheckedChange = { checked ->
+                        if (checked && Build.VERSION.SDK_INT >= 33 && !FastingAlarm.canNotify(context)) {
+                            askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                        Reminders.set(context, kind, checked)
+                        version++
+                    })
+                }
+            }
+        }
+    }
+
+    picking?.let { kind ->
+        val minute = Reminders.minute(context, kind)
+        val state = rememberTimePickerState(initialHour = minute / 60, initialMinute = minute % 60, is24Hour = true)
+        AlertDialog(
+            onDismissRequest = { picking = null },
+            title = { Text("${kind.label}: hoe laat?") },
+            text = { TimePicker(state = state) },
+            confirmButton = {
+                TextButton(onClick = {
+                    // Choosing a time switches the reminder on: that is why you chose it.
+                    if (Build.VERSION.SDK_INT >= 33 && !FastingAlarm.canNotify(context)) {
+                        askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    Reminders.set(context, kind, true, state.hour * 60 + state.minute)
+                    picking = null
+                    version++
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { picking = null }) { Text("Annuleren") } },
+        )
     }
 }

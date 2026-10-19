@@ -54,6 +54,27 @@ interface Api {
     @POST("api/v1/diary")
     suspend fun addEntry(@Body body: AddEntryRequest): IdResponse
 
+    @POST("api/v1/diary")
+    suspend fun addQuickEntry(@Body body: QuickEntryRequest): IdResponse
+
+    @POST("api/v1/diary/share")
+    suspend fun shareMeal(@Body body: ShareRequest): ShareResponse
+
+    @GET("api/v1/household")
+    suspend fun household(): HouseholdResponse
+
+    @GET("api/v1/meals")
+    suspend fun savedMeals(): SavedMealsResponse
+
+    @POST("api/v1/meals")
+    suspend fun saveMeal(@Body body: SaveMealRequest): IdResponse
+
+    @DELETE("api/v1/meals/{id}")
+    suspend fun deleteSavedMeal(@Path("id") id: Int): OkResponse
+
+    @POST("api/v1/meals/{id}/log")
+    suspend fun logSavedMeal(@Path("id") id: Int, @Body body: LogMealRequest): AddedResponse
+
     @PATCH("api/v1/diary/{id}")
     suspend fun updateEntry(@Path("id") id: Int, @Body body: UpdateEntryRequest): OkResponse
 
@@ -132,9 +153,23 @@ data class TargetDto(
     val steps: Int? = null,
     /** Already included in [kcal]. */
     val stepsKcal: Int = 0,
+    /** At least this much fiber; at most this much sugar, saturated fat and salt. */
+    val fiberG: Int = 0,
+    val sugarMaxG: Int = 0,
+    val saturatedFatMaxG: Int = 0,
+    val saltMaxG: Int = 0,
 )
 
-@Serializable data class MeResponse(val user: UserDto, val profile: ProfileDto? = null, val target: TargetDto? = null)
+@Serializable
+data class MeResponse(
+    val user: UserDto,
+    val profile: ProfileDto? = null,
+    val target: TargetDto? = null,
+    /** The other members of the household, to share a meal with. */
+    val household: List<MemberDto> = emptyList(),
+)
+
+@Serializable data class MemberDto(val id: Int, val name: String)
 
 @Serializable
 data class Per100Dto(
@@ -170,7 +205,8 @@ data class FoodDto(
 data class EntryDto(
     val id: Int,
     val meal: String,
-    val foodId: Int,
+    /** Null for a quick entry: typed-in kcal, no food and no amount. */
+    val foodId: Int? = null,
     val name: String,
     val brand: String? = null,
     val category: String? = null,
@@ -180,9 +216,25 @@ data class EntryDto(
     val protein: Double,
     val carbs: Double,
     val fat: Double,
-)
+    val fiber: Double? = null,
+    val sugar: Double? = null,
+    val saturatedFat: Double? = null,
+    val salt: Double? = null,
+) {
+    val quick get() = foodId == null
+}
 
-@Serializable data class TotalsDto(val kcal: Double, val protein: Double, val carbs: Double, val fat: Double)
+@Serializable
+data class TotalsDto(
+    val kcal: Double,
+    val protein: Double,
+    val carbs: Double,
+    val fat: Double,
+    val fiber: Double = 0.0,
+    val sugar: Double = 0.0,
+    val saturatedFat: Double = 0.0,
+    val salt: Double = 0.0,
+)
 @Serializable data class DiaryResponse(
     val date: String,
     val entries: List<EntryDto>,
@@ -193,7 +245,25 @@ data class EntryDto(
     val streak: Int = 0,
 )
 @Serializable data class AddEntryRequest(val date: String, val meal: String, val foodId: Int, val grams: Double)
-@Serializable data class UpdateEntryRequest(val grams: Double? = null, val meal: String? = null)
+@Serializable
+data class QuickEntryRequest(
+    val date: String,
+    val meal: String,
+    val name: String,
+    val kcal: Double,
+    val protein: Double? = null,
+    val carbs: Double? = null,
+    val fat: Double? = null,
+)
+
+/** grams for a food entry; name and kcal for a quick entry. */
+@Serializable
+data class UpdateEntryRequest(
+    val grams: Double? = null,
+    val meal: String? = null,
+    val name: String? = null,
+    val kcal: Double? = null,
+)
 @Serializable data class WeightDto(val date: String, val weightKg: Double)
 @Serializable data class WeightsResponse(val weights: List<WeightDto>)
 
@@ -272,3 +342,23 @@ data class RecipeRequest(
 @Serializable data class FastResponse(val fast: FastDto)
 @Serializable data class StartFastRequest(val goalHours: Int, val startedAt: String? = null)
 @Serializable data class UpdateFastRequest(val goalHours: Int? = null, val startedAt: String? = null, val end: Boolean? = null)
+
+/** [factor]: their portion relative to mine. Without [entryIds] the whole meal goes. */
+@Serializable
+data class ShareRequest(
+    val date: String,
+    val meal: String,
+    val toUserId: Int,
+    val factor: Double = 1.0,
+    val entryIds: List<Int>? = null,
+)
+@Serializable data class ShareResponse(val shared: Int)
+@Serializable data class HouseholdResponse(val members: List<MemberDto>)
+
+/** [grams] is null for a quick entry. */
+@Serializable data class SavedMealItemDto(val name: String, val grams: Double? = null, val unit: String = "g", val kcal: Int)
+@Serializable data class SavedMealDto(val id: Int, val name: String, val kcal: Int, val items: List<SavedMealItemDto>)
+@Serializable data class SavedMealsResponse(val meals: List<SavedMealDto>)
+@Serializable data class SaveMealRequest(val name: String, val date: String, val meal: String)
+@Serializable data class LogMealRequest(val date: String, val meal: String)
+@Serializable data class AddedResponse(val added: Int)

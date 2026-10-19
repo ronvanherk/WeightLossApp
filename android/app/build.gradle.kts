@@ -89,4 +89,5 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.play.services.code.scanner)
     implementation(libs.health.connect)
+    implementation(libs.glance.appwidget)
 }

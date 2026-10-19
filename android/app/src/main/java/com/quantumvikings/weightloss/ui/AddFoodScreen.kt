@@ -23,10 +23,15 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,19 +62,26 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.quantumvikings.weightloss.data.AddEntryRequest
 import com.quantumvikings.weightloss.data.FoodDto
+import com.quantumvikings.weightloss.data.LogMealRequest
+import com.quantumvikings.weightloss.data.QuickEntryRequest
+import com.quantumvikings.weightloss.data.SavedMealDto
 import com.quantumvikings.weightloss.data.Session
 import com.quantumvikings.weightloss.ui.theme.MEAL_STYLES
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
-private val LIST_TABS = listOf("Recent", "Favorieten", "Recepten")
+private val LIST_TABS = listOf("Recent", "Favorieten", "Maaltijden", "Recepten")
+private const val TAB_MEALS = 2
+private const val TAB_RECIPES = 3
 
 @Composable
 fun AddFoodScreen(
@@ -88,10 +100,15 @@ fun AddFoodScreen(
     var recent by remember { mutableStateOf<List<FoodDto>?>(null) }
     var favorites by remember { mutableStateOf<List<FoodDto>?>(null) }
     var recipes by remember { mutableStateOf<List<FoodDto>?>(null) }
+    var meals by remember { mutableStateOf<List<SavedMealDto>?>(null) }
+    var addedMeals by remember { mutableStateOf(setOf<Int>()) }
+    var deletingMeal by remember { mutableStateOf<SavedMealDto?>(null) }
+    var quickOpen by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     // Foods added from this screen, so their "+" turns into a check.
     var added by remember { mutableStateOf(setOf<Int>()) }
+    var addedCount by remember { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -100,6 +117,7 @@ fun AddFoodScreen(
         runCatching { session.api.recentFoods(meal) }.onSuccess { recent = it.foods }.onFailure { recent = emptyList() }
         runCatching { session.api.favoriteFoods() }.onSuccess { favorites = it.foods }.onFailure { favorites = emptyList() }
         runCatching { session.api.recipes() }.onSuccess { recipes = it.foods }.onFailure { recipes = emptyList() }
+        runCatching { session.api.savedMeals() }.onSuccess { meals = it.meals }.onFailure { meals = emptyList() }
     }
     LaunchedEffect(query) {
         if (query.trim().length < 2) {
@@ -121,7 +139,40 @@ fun AddFoodScreen(
             runCatching { session.api.addEntry(AddEntryRequest(date, meal, food.id, grams)) }
                 .onSuccess {
                     added = added + food.id
+                    addedCount++
                     snackbar.showSnackbar("${food.name} (${fmt(grams)} ${unitLabel(food.unit)}) toegevoegd aan ${style.label.lowercase()}")
+                }
+                .onFailure { error = session.describe(it) }
+        }
+    }
+
+    fun logMeal(saved: SavedMealDto) {
+        scope.launch {
+            runCatching { session.api.logSavedMeal(saved.id, LogMealRequest(date, meal)) }
+                .onSuccess {
+                    addedMeals = addedMeals + saved.id
+                    addedCount++
+                    snackbar.showSnackbar("${saved.name} (${saved.kcal} kcal) toegevoegd aan ${style.label.lowercase()}")
+                }
+                .onFailure { error = session.describe(it) }
+        }
+    }
+
+    fun deleteMeal(saved: SavedMealDto) {
+        scope.launch {
+            runCatching { session.api.deleteSavedMeal(saved.id) }
+                .onSuccess { meals = meals?.filter { it.id != saved.id } }
+                .onFailure { error = session.describe(it) }
+        }
+    }
+
+    fun addQuick(request: QuickEntryRequest) {
+        scope.launch {
+            runCatching { session.api.addQuickEntry(request) }
+                .onSuccess {
+                    quickOpen = false
+                    addedCount++
+                    snackbar.showSnackbar("${request.name} (${request.kcal.toInt()} kcal) toegevoegd aan ${style.label.lowercase()}")
                 }
                 .onFailure { error = session.describe(it) }
         }
@@ -169,8 +220,8 @@ fun AddFoodScreen(
                         color = Color.White,
                         modifier = Modifier.weight(1f),
                     )
-                    if (added.isNotEmpty()) {
-                        Text("${added.size} toegevoegd", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                    if (addedCount > 0) {
+                        Text("$addedCount toegevoegd", color = Color.White, style = MaterialTheme.typography.labelLarge)
                         Spacer(Modifier.width(12.dp))
                     }
                 }
@@ -224,9 +275,10 @@ fun AddFoodScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 ) {
                     LIST_TABS.forEachIndexed { i, title ->
-                        Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title) })
+                        Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title, maxLines = 1) })
                     }
                 }
+                QuickLink(style.color) { quickOpen = true }
             }
             val list = when {
                 searchMode -> results
@@ -234,8 +286,15 @@ fun AddFoodScreen(
                 tab == 1 -> favorites
                 else -> recipes
             }
-            val recipeTab = !searchMode && tab == 2
+            val recipeTab = !searchMode && tab == TAB_RECIPES
             when {
+                !searchMode && tab == TAB_MEALS -> SavedMealsList(
+                    meals = meals,
+                    accent = style.color,
+                    added = addedMeals,
+                    onLog = ::logMeal,
+                    onDelete = { deletingMeal = it },
+                )
                 list == null || (searchMode && searching && results.isEmpty()) -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = style.color)
                 }
@@ -264,6 +323,150 @@ fun AddFoodScreen(
                     }
                     item {
                         if (recipeTab) CreateLink(onNewRecipe, "Nieuw recept") else CreateLink(onCreate)
+                    }
+                }
+            }
+        }
+    }
+
+    if (quickOpen) QuickAddDialog(onDismiss = { quickOpen = false }, onAdd = { name, kcal, p, c, f ->
+        addQuick(QuickEntryRequest(date, meal, name, kcal, p, c, f))
+    })
+
+    deletingMeal?.let { saved ->
+        AlertDialog(
+            onDismissRequest = { deletingMeal = null },
+            title = { Text("${saved.name} verwijderen?") },
+            text = { Text("De maaltijd verdwijnt uit deze lijst. Wat al in je dagboek staat, blijft staan.") },
+            confirmButton = { TextButton(onClick = { deleteMeal(saved); deletingMeal = null }) { Text("Verwijderen") } },
+            dismissButton = { TextButton(onClick = { deletingMeal = null }) { Text("Annuleren") } },
+        )
+    }
+}
+
+/** "Only calories": for a restaurant meal or anything not in the tables. */
+@Composable
+private fun QuickLink(accent: Color, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+    ) {
+        Icon(Icons.Filled.Bolt, null, tint = accent)
+        Spacer(Modifier.width(6.dp))
+        Text("Alleen calorieën invullen", color = accent, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+private fun QuickAddDialog(onDismiss: () -> Unit, onAdd: (String, Double, Double?, Double?, Double?) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var kcal by remember { mutableStateOf("") }
+    var protein by remember { mutableStateOf("") }
+    var carbs by remember { mutableStateOf("") }
+    var fat by remember { mutableStateOf("") }
+    val k = parseDecimal(kcal)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Snel toevoegen") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Omschrijving") },
+                    placeholder = { Text("Bijv. pizza bij de Italiaan") },
+                    singleLine = true,
+                )
+                QuickNumber("Calorieën", "kcal", kcal) { kcal = it }
+                Text("Optioneel", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    QuickNumber("Eiwit", "g", protein, Modifier.weight(1f)) { protein = it }
+                    QuickNumber("Koolh.", "g", carbs, Modifier.weight(1f)) { carbs = it }
+                    QuickNumber("Vet", "g", fat, Modifier.weight(1f)) { fat = it }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onAdd(name.trim(), k!!, parseDecimal(protein), parseDecimal(carbs), parseDecimal(fat)) },
+                enabled = name.isNotBlank() && k != null && k >= 0 && k <= 10000,
+            ) { Text("Toevoegen") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuleren") } },
+    )
+}
+
+@Composable
+private fun QuickNumber(label: String, unit: String, value: String, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label, maxLines = 1) },
+        suffix = { Text(unit) },
+        singleLine = true,
+        isError = value.isNotEmpty() && parseDecimal(value) == null,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun SavedMealsList(
+    meals: List<SavedMealDto>?,
+    accent: Color,
+    added: Set<Int>,
+    onLog: (SavedMealDto) -> Unit,
+    onDelete: (SavedMealDto) -> Unit,
+) {
+    when {
+        meals == null -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = accent)
+        }
+        meals.isEmpty() -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
+            Text("🍱", style = MaterialTheme.typography.displayMedium)
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Nog geen maaltijden. Eet je vaak hetzelfde? Zet het een keer in je dagboek en kies bij die maaltijd ⋮ → Opslaan als maaltijd. Daarna voeg je alles met één tik toe.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        else -> LazyColumn(
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(meals, key = { it.id }) { saved ->
+                SectionCard(padding = 0.dp) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                    ) {
+                        EmojiBadge("🍱", accent, size = 40.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(saved.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                "${saved.kcal} kcal · " + saved.items.joinToString(", ") { it.name },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        IconButton(onClick = { onDelete(saved) }) {
+                            Icon(Icons.Filled.Delete, "Verwijderen", tint = MaterialTheme.colorScheme.outline)
+                        }
+                        FilledIconButton(
+                            onClick = { onLog(saved) },
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = if (saved.id in added) accent else accent.copy(alpha = 0.15f),
+                                contentColor = if (saved.id in added) Color.White else accent,
+                            ),
+                        ) { Icon(if (saved.id in added) Icons.Filled.Check else Icons.Filled.Add, "Toevoegen") }
                     }
                 }
             }

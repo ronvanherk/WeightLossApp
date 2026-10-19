@@ -32,11 +32,15 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.LocalDrink
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.LocalDrink
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
@@ -82,6 +86,11 @@ import com.quantumvikings.weightloss.data.EntryDto
 import com.quantumvikings.weightloss.data.FastingAlarm
 import com.quantumvikings.weightloss.data.FastingResponse
 import com.quantumvikings.weightloss.data.HealthSteps
+import com.quantumvikings.weightloss.data.MemberDto
+import com.quantumvikings.weightloss.data.SaveMealRequest
+import com.quantumvikings.weightloss.data.ShareRequest
+import com.quantumvikings.weightloss.data.TargetDto
+import com.quantumvikings.weightloss.data.TotalsDto
 import com.quantumvikings.weightloss.data.StepsDto
 import com.quantumvikings.weightloss.data.StartFastRequest
 import com.quantumvikings.weightloss.data.UpdateFastRequest
@@ -94,6 +103,7 @@ import com.quantumvikings.weightloss.ui.theme.HeaderGradient
 import com.quantumvikings.weightloss.ui.theme.MEAL_STYLES
 import com.quantumvikings.weightloss.ui.theme.ProteinColor
 import com.quantumvikings.weightloss.ui.theme.WaterColor
+import com.quantumvikings.weightloss.widget.DayWidget
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.Duration
@@ -110,6 +120,10 @@ private val NL = Locale.forLanguageTag("nl")
 private val DAY_FORMAT = DateTimeFormatter.ofPattern("EEEE d MMMM", NL)
 private const val GLASS_ML = 250
 private const val WATER_GOAL_ML = 2000
+private val SHARE_FACTORS = listOf(0.5, 0.75, 1.0, 1.25, 1.5)
+
+/** A meal (or some of its entries) about to go to a household member's diary. */
+private data class Share(val meal: String, val member: MemberDto, val entryIds: List<Int>? = null)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,6 +142,10 @@ fun DiaryScreen(
     var editing by remember { mutableStateOf<EntryDto?>(null) }
     var picking by remember { mutableStateOf(false) }
     var fasting by remember { mutableStateOf<FastingResponse?>(null) }
+    var household by remember { mutableStateOf<List<MemberDto>>(emptyList()) }
+    var sharing by remember { mutableStateOf<Share?>(null) }
+    var savingMeal by remember { mutableStateOf<String?>(null) }
+    var notice by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val health = remember { HealthSteps(context.applicationContext) }
@@ -156,6 +174,10 @@ fun DiaryScreen(
         runCatching { session.api.diary(date, LocalDate.now().toString()) }
             .onSuccess { diary = it; error = null }
             .onFailure { error = session.describe(it) }
+        if (day == LocalDate.now()) DayWidget.refresh(context)
+    }
+    LaunchedEffect(Unit) {
+        runCatching { session.api.household() }.onSuccess { household = it.members }
     }
     LaunchedEffect(reload) {
         runCatching { session.api.fasting() }.onSuccess { fasting = it }
@@ -197,6 +219,7 @@ fun DiaryScreen(
         diary = d.copy(waterMl = ml) // feels instant; the server call follows
         scope.launch {
             runCatching { session.api.saveWater(WaterDto(date, ml)) }
+                .onSuccess { if (day == LocalDate.now()) DayWidget.refresh(context) }
                 .onFailure { error = session.describe(it); reload++ }
         }
     }
@@ -217,6 +240,9 @@ fun DiaryScreen(
         }
         error?.let { msg ->
             item { Text(msg, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp)) }
+        }
+        notice?.let { msg ->
+            item { Text(msg, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 20.dp)) }
         }
         val d = diary
         if (d != null) {
@@ -253,8 +279,14 @@ fun DiaryScreen(
                         onAdd = { onAdd(meal) },
                         onEntry = { editing = it },
                         onCopyYesterday = { copyYesterday(meal) },
+                        household = household,
+                        onShare = { member -> sharing = Share(meal, member) },
+                        onSaveMeal = { savingMeal = meal },
                     )
                 }
+            }
+            if (d.target != null && d.entries.isNotEmpty()) {
+                item(key = "nutrients") { NutrientsCard(d.totals, d.target) }
             }
             item(key = "water") { WaterCard(ml = d.waterMl, onChange = ::setWater) }
             if ((health.available || health.installable) && !day.isAfter(LocalDate.now())) {
@@ -297,10 +329,12 @@ fun DiaryScreen(
     editing?.let { entry ->
         EditEntrySheet(
             entry = entry,
+            household = household,
             onDismiss = { editing = null },
-            onSave = { grams, meal ->
+            onShare = { member -> editing = null; sharing = Share(entry.meal, member, listOf(entry.id)) },
+            onSave = { update ->
                 scope.launch {
-                    runCatching { session.api.updateEntry(entry.id, UpdateEntryRequest(grams, meal)) }
+                    runCatching { session.api.updateEntry(entry.id, update) }
                         .onSuccess { editing = null; reload++ }
                         .onFailure { error = session.describe(it) }
                 }
@@ -309,6 +343,37 @@ fun DiaryScreen(
                 scope.launch {
                     runCatching { session.api.deleteEntry(entry.id) }
                         .onSuccess { editing = null; reload++ }
+                        .onFailure { error = session.describe(it) }
+                }
+            },
+        )
+    }
+
+    sharing?.let { share ->
+        ShareDialog(
+            share = share,
+            single = share.entryIds != null,
+            onDismiss = { sharing = null },
+            onConfirm = { factor ->
+                sharing = null
+                scope.launch {
+                    runCatching { session.api.shareMeal(ShareRequest(date, share.meal, share.member.id, factor, share.entryIds)) }
+                        .onSuccess { notice = "Bij ${share.member.name} gezet: ${mealLabel(share.meal).lowercase()} (${(factor * 100).toInt()}%)."; error = null }
+                        .onFailure { error = session.describe(it) }
+                }
+            },
+        )
+    }
+
+    savingMeal?.let { meal ->
+        SaveMealDialog(
+            meal = meal,
+            onDismiss = { savingMeal = null },
+            onSave = { name ->
+                savingMeal = null
+                scope.launch {
+                    runCatching { session.api.saveMeal(SaveMealRequest(name, date, meal)) }
+                        .onSuccess { notice = "\"$name\" opgeslagen. Je vindt hem bij toevoegen onder Maaltijden."; error = null }
                         .onFailure { error = session.describe(it) }
                 }
             },
@@ -480,8 +545,12 @@ private fun MealCard(
     onAdd: () -> Unit,
     onEntry: (EntryDto) -> Unit,
     onCopyYesterday: () -> Unit,
+    household: List<MemberDto>,
+    onShare: (MemberDto) -> Unit,
+    onSaveMeal: () -> Unit,
 ) {
     val style = MEAL_STYLES.getValue(meal)
+    var menu by remember { mutableStateOf(false) }
     val kcal = entries.sumOf { it.kcal }.toInt()
     val advised = targetKcal?.let { (it * style.share).toInt() }
     SectionCard(modifier = Modifier.padding(horizontal = 16.dp), padding = 0.dp) {
@@ -499,6 +568,17 @@ private fun MealCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (entries.isNotEmpty()) {
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Meer voor ${style.label}") }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Opslaan als maaltijd") }, onClick = { menu = false; onSaveMeal() })
+                        for (member in household) {
+                            DropdownMenuItem(text = { Text("Ook bij ${member.name} zetten") }, onClick = { menu = false; onShare(member) })
+                        }
+                    }
+                }
+            }
             FilledIconButton(
                 onClick = onAdd,
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = style.color, contentColor = Color.White),
@@ -514,11 +594,12 @@ private fun MealCard(
                         .clickable { onEntry(entry) }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                 ) {
-                    Text(categoryEmoji(entry.category), modifier = Modifier.width(30.dp))
+                    Text(if (entry.quick) "✏️" else categoryEmoji(entry.category), modifier = Modifier.width(30.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(entry.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            listOfNotNull(entry.brand, "${fmt(entry.grams)} ${unitLabel(entry.unit)}").joinToString(" · "),
+                            if (entry.quick) "Snel toegevoegd"
+                            else listOfNotNull(entry.brand, "${fmt(entry.grams)} ${unitLabel(entry.unit)}").joinToString(" · "),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -586,35 +667,49 @@ private fun WaterCard(ml: Int, onChange: (Int) -> Unit) {
 @Composable
 private fun EditEntrySheet(
     entry: EntryDto,
+    household: List<MemberDto>,
     onDismiss: () -> Unit,
-    onSave: (grams: Double, meal: String) -> Unit,
+    onShare: (MemberDto) -> Unit,
+    onSave: (UpdateEntryRequest) -> Unit,
     onDelete: () -> Unit,
 ) {
-    var grams by remember { mutableStateOf(fmt(entry.grams)) }
+    // A food entry edits its amount; a quick entry its name and kcal.
+    var grams by remember { mutableStateOf(if (entry.quick) fmt(entry.kcal) else fmt(entry.grams)) }
+    var name by remember { mutableStateOf(entry.name) }
     var meal by remember { mutableStateOf(entry.meal) }
     val g = parseDecimal(grams)
+    val valid = g != null && (if (entry.quick) g >= 0 && name.isNotBlank() else g > 0)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                EmojiBadge(categoryEmoji(entry.category), MEAL_STYLES.getValue(meal).color)
+                EmojiBadge(if (entry.quick) "✏️" else categoryEmoji(entry.category), MEAL_STYLES.getValue(meal).color)
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(entry.name, style = MaterialTheme.typography.titleMedium)
                     entry.brand?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             }
+            if (entry.quick) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Omschrijving") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             OutlinedTextField(
                 value = grams,
                 onValueChange = { grams = it },
-                label = { Text("Hoeveelheid (${unitLabel(entry.unit)})") },
+                label = { Text(if (entry.quick) "Calorieën (kcal)" else "Hoeveelheid (${unitLabel(entry.unit)})") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (g != null && g > 0 && entry.grams > 0) {
+            if (!entry.quick && g != null && g > 0 && entry.grams > 0) {
                 val f = g / entry.grams
                 Text("${(entry.kcal * f).toInt()} kcal", style = MaterialTheme.typography.headlineSmall)
                 MacroLine(entry.protein * f, entry.carbs * f, entry.fat * f)
@@ -632,6 +727,9 @@ private fun EditEntrySheet(
                     )
                 }
             }
+            for (member in household) {
+                TextButton(onClick = { onShare(member) }) { Text("Ook bij ${member.name} zetten") }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(
                     onClick = onDelete,
@@ -639,11 +737,120 @@ private fun EditEntrySheet(
                     modifier = Modifier.weight(1f),
                 ) { Text("Verwijderen") }
                 Button(
-                    onClick = { g?.let { onSave(it, meal) } },
-                    enabled = g != null && g > 0,
+                    onClick = {
+                        g?.let {
+                            onSave(
+                                if (entry.quick) UpdateEntryRequest(meal = meal, name = name.trim(), kcal = it)
+                                else UpdateEntryRequest(grams = it, meal = meal),
+                            )
+                        }
+                    },
+                    enabled = valid,
                     modifier = Modifier.weight(1f),
                 ) { Text("Opslaan") }
             }
+        }
+    }
+}
+
+/** Their portion as a share of mine: Cindy often eats less of the same pan. */
+@Composable
+private fun ShareDialog(share: Share, single: Boolean, onDismiss: () -> Unit, onConfirm: (Double) -> Unit) {
+    var factor by remember { mutableStateOf(1.0) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ook bij ${share.member.name}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    if (single) "Dit product gaat naar het dagboek van ${share.member.name}, dezelfde dag en maaltijd. Hoeveel at ${share.member.name} ervan?"
+                    else "De hele ${mealLabel(share.meal).lowercase()} gaat naar het dagboek van ${share.member.name}. Hoeveel at ${share.member.name} vergeleken met jou?",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    for (f in SHARE_FACTORS) {
+                        FilterChip(selected = factor == f, onClick = { factor = f }, label = { Text("${(f * 100).toInt()}%") })
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(factor) }) { Text("Zetten") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuleren") } },
+    )
+}
+
+@Composable
+private fun SaveMealDialog(meal: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var name by remember { mutableStateOf("Mijn ${mealLabel(meal).lowercase()}") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Opslaan als maaltijd") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Alles van deze ${mealLabel(meal).lowercase()} wordt één maaltijd die je later met één tik toevoegt.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Naam") }, singleLine = true)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(name.trim()) }, enabled = name.isNotBlank()) { Text("Opslaan") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuleren") } },
+    )
+}
+
+/** Fiber (at least) and sugar, saturated fat and salt (at most) against the day's target. */
+@Composable
+private fun NutrientsCard(totals: TotalsDto, target: TargetDto) {
+    if (target.fiberG == 0) return // an older server without these limits
+    SectionCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            EmojiBadge("🥦", NutrientGood)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("Voedingsstoffen", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Vezels minstens, de rest liefst niet meer dan",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        NutrientRow("Vezels", totals.fiber, target.fiberG.toDouble(), minimum = true)
+        NutrientRow("Suikers", totals.sugar, target.sugarMaxG.toDouble(), minimum = false)
+        NutrientRow("Verzadigd vet", totals.saturatedFat, target.saturatedFatMaxG.toDouble(), minimum = false)
+        NutrientRow("Zout", totals.salt, target.saltMaxG.toDouble(), minimum = false)
+    }
+}
+
+private val NutrientGood = Color(0xFF2BB673)
+private val NutrientWarn = Color(0xFFF2545B)
+
+@Composable
+private fun NutrientRow(label: String, value: Double, goal: Double, minimum: Boolean) {
+    val progress = if (goal <= 0) 0f else (value / goal).toFloat()
+    // A minimum turns green when reached; a maximum turns red when passed.
+    val color = when {
+        minimum && progress >= 1f -> NutrientGood
+        minimum -> CarbsColor
+        progress > 1f -> NutrientWarn
+        else -> NutrientGood
+    }
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Row {
+            Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Text(
+                "${fmt(Math.round(value * 10) / 10.0)} / ${if (minimum) "≥" else "≤"} ${fmt(goal)} g",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (!minimum && progress > 1f) NutrientWarn else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Box(
+            Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(6.dp).clip(CircleShape).background(color))
         }
     }
 }

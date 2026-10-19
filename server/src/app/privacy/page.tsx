@@ -25,7 +25,7 @@ export default function Privacy() {
           schrijft er niets in en deelt stapgegevens met niemand. Je kunt de toestemming altijd intrekken in Health
           Connect.
         </li>
-        <li>Producten en recepten die je zelf aanmaakt en producten die je als favoriet markeert.</li>
+        <li>Producten, recepten en maaltijden die je zelf aanmaakt of opslaat en producten die je als favoriet markeert.</li>
       </ul>
       <p>De app gebruikt geen advertenties, geen analyse- of trackingdiensten en vraagt geen locatie of contacten op.</p>
 
@@ -33,6 +33,14 @@ export default function Privacy() {
       <p>
         Alle gegevens staan op een eigen server van de beheerder, beveiligd met HTTPS, en worden alleen gebruikt om
         jouw dagboek, je dagdoel en je voortgang te tonen. Gegevens worden niet verkocht en niet gedeeld met derden.
+      </p>
+      <p>
+        Leden van hetzelfde huishouden (ingesteld door de beheerder) kunnen een maaltijd die ze samen aten in elkaars
+        dagboek zetten. Ze kunnen elkaars dagboek, gewicht en profiel niet inzien.
+      </p>
+      <p>
+        Herinneringen en de widget op je startscherm draaien op je telefoon. Een herinnering vraagt de server alleen of
+        de maaltijd, het gewicht of het water al is bijgehouden; over herinneringen wordt niets op de server bewaard.
       </p>
       <p>
         Bij het scannen van een barcode die nog niet bekend is, vraagt de server de productgegevens op bij Open Food
