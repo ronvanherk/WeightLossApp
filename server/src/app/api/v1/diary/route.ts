@@ -5,17 +5,24 @@ import { formatDay, parseDay } from "@/lib/dates";
 import { displayName } from "@/lib/foods";
 import { handler, HttpError, json, parseBody } from "@/lib/http";
 import { portion } from "@/lib/nutrition";
+import { streakOf } from "@/lib/streak";
 import { localeOf, targetFor } from "@/lib/targets";
 
-/** One day: entries per meal, totals and the target for that day. */
+/**
+ * One day: entries per meal, totals and the target for that day, plus the logging streak.
+ * `today` is the phone's date; the server runs on UTC and would be a day behind after midnight.
+ */
 export const GET = handler(async (req: Request) => {
   const userId = await requireUser(req);
-  const day = parseDay(new URL(req.url).searchParams.get("date"));
-  const [entries, target, locale, water] = await Promise.all([
+  const params = new URL(req.url).searchParams;
+  const day = parseDay(params.get("date"));
+  const today = params.get("today") ? parseDay(params.get("today")) : parseDay(formatDay(new Date()));
+  const [entries, target, locale, water, streak] = await Promise.all([
     db.diaryEntry.findMany({ where: { userId, date: day }, include: { food: true }, orderBy: { createdAt: "asc" } }),
     targetFor(userId, day),
     localeOf(userId),
     db.waterEntry.findUnique({ where: { userId_date: { userId, date: day } } }),
+    streakOf(userId, today),
   ]);
   const totals = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
   for (const e of entries) {
@@ -44,6 +51,7 @@ export const GET = handler(async (req: Request) => {
     totals: { kcal: Math.round(totals.kcal), protein: r(totals.protein), carbs: r(totals.carbs), fat: r(totals.fat) },
     target,
     waterMl: water?.ml ?? 0,
+    streak,
   });
 });
 

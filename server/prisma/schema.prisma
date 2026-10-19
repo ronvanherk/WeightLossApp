@@ -36,6 +36,7 @@ enum FoodSource {
   BLS // DE, Max Rubner-Institut
   OFF // Open Food Facts (branded products, barcodes)
   CUSTOM // created by one of the users, visible to all users
+  RECIPE // made of other foods by one of the users, visible to all users
 }
 
 model User {
@@ -50,6 +51,7 @@ model User {
   foods        Food[]
   water        WaterEntry[]
   favorites    Favorite[]
+  fasts        Fast[]
 
   @@map("app_user")
 }
@@ -94,7 +96,7 @@ model Food {
   servingG    Float?       @map("serving_g")
   // "g" or "ml": what the per-100 values are per.
   unit        String       @default("g")
-  // Food group in Dutch, e.g. "Groente" (NEVO); null for branded products.
+  // Food group: Dutch for NEVO ("Groente"), English for Frida/BLS, "Recept"; null for branded products.
   category    String?
   // Every nutrient the source has, by NEVO component code (ENERCC, VITC, FE, ...), per 100 g.
   nutrients   Json?
@@ -193,4 +195,17 @@ model Favorite {
 
   @@id([userId, foodId])
   @@map("favorite")
+}
+
+// An intermittent fast: open while endedAt is null; at most one open fast per user.
+model Fast {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt DateTime  @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+  goalHours Int       @map("goal_hours")
+
+  @@index([userId, startedAt])
+  @@map("fast")
 }

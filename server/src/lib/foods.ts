@@ -138,7 +138,7 @@ export async function searchFoods(query: string, limit = 25): Promise<Food[]> {
     SELECT id FROM food
     WHERE search_text ILIKE ALL (${patterns}::text[])
     ORDER BY word_similarity(${q}, search_text) DESC,
-             CASE WHEN source IN ('NEVO', 'FRIDA', 'BLS') THEN 0 WHEN source = 'CUSTOM' THEN 1 ELSE 2 END,
+             CASE WHEN source IN ('NEVO', 'FRIDA', 'BLS') THEN 0 WHEN source IN ('CUSTOM', 'RECIPE') THEN 1 ELSE 2 END,
              length(search_text)
     LIMIT ${Prisma.raw(String(Math.min(Math.max(limit, 1), 100)))}`;
   const foods = await db.food.findMany({ where: { id: { in: ids.map((r) => r.id) } } });

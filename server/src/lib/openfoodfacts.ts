@@ -18,9 +18,10 @@ export interface OffProduct {
   nutrition?: { aggregated_set?: { per?: string; nutrients?: Record<string, { value?: number | string }> } };
 }
 
+/** A non-negative number, rounded to 2 decimals (the dump has float noise like 9.100000381). */
 function num(v: unknown): number | null {
   const n = typeof v === "string" ? Number(v.replace(",", ".")) : typeof v === "number" ? v : NaN;
-  return Number.isFinite(n) && n >= 0 ? n : null;
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
 }
 
 const clean = (s?: string) => (s && s.trim() ? s.trim() : null);

@@ -7,7 +7,7 @@ export default function Privacy() {
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: 720, margin: "0 auto", padding: "24px 16px", lineHeight: 1.6 }}>
       <h1>Privacyverklaring WeightLoss</h1>
-      <p>Laatst bijgewerkt: 18 oktober 2026</p>
+      <p>Laatst bijgewerkt: 19 oktober 2026</p>
 
       <p>
         WeightLoss is een privé-app voor het bijhouden van eten, drinken en gewicht. De app is alleen bedoeld voor
@@ -18,8 +18,8 @@ export default function Privacy() {
       <ul>
         <li>Accountgegevens: naam, e-mailadres en een versleuteld wachtwoord.</li>
         <li>Profiel: geslacht, geboortedatum, lengte, activiteitsniveau, streefgewicht en gewenst tempo.</li>
-        <li>Gezondheidsgegevens: gewichtsmetingen, wat je eet en drinkt en hoeveel water je drinkt.</li>
-        <li>Producten die je zelf aanmaakt en producten die je als favoriet markeert.</li>
+        <li>Gezondheidsgegevens: gewichtsmetingen, wat je eet en drinkt, hoeveel water je drinkt en de begin- en eindtijden van het vasten dat je bijhoudt.</li>
+        <li>Producten en recepten die je zelf aanmaakt en producten die je als favoriet markeert.</li>
       </ul>
       <p>De app gebruikt geen advertenties, geen analyse- of trackingdiensten en vraagt geen locatie of contacten op.</p>
 
@@ -37,7 +37,7 @@ export default function Privacy() {
       <h2 style={section}>Bewaren en verwijderen</h2>
       <p>
         Gegevens blijven bewaard zolang je account bestaat. Je kunt de beheerder vragen je account en alle bijbehorende
-        gegevens te verwijderen; dat gebeurt binnen 30 dagen. Producten die je zelf hebt aangemaakt blijven dan zonder
+        gegevens te verwijderen; dat gebeurt binnen 30 dagen. Producten en recepten die je zelf hebt aangemaakt blijven dan zonder
         jouw naam beschikbaar voor de andere gebruiker.
       </p>
 
