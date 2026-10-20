@@ -7,7 +7,7 @@ export default function Privacy() {
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: 720, margin: "0 auto", padding: "24px 16px", lineHeight: 1.6 }}>
       <h1>Privacyverklaring WeightLoss</h1>
-      <p>Laatst bijgewerkt: 19 oktober 2026</p>
+      <p>Laatst bijgewerkt: 20 oktober 2026</p>
 
       <p>
         WeightLoss is een privé-app voor het bijhouden van eten, drinken en gewicht. De app is alleen bedoeld voor
@@ -18,14 +18,20 @@ export default function Privacy() {
       <ul>
         <li>Accountgegevens: naam, e-mailadres en een versleuteld wachtwoord.</li>
         <li>Profiel: geslacht, geboortedatum, lengte, activiteitsniveau, streefgewicht en gewenst tempo.</li>
-        <li>Gezondheidsgegevens: gewichtsmetingen, wat je eet en drinkt, hoeveel water je drinkt en de begin- en eindtijden van het vasten dat je bijhoudt.</li>
+        <li>Gezondheidsgegevens: gewichtsmetingen, lichaamsmaten (zoals taille en vetpercentage) als je die invult, wat je eet en drinkt, hoeveel water je drinkt en de begin- en eindtijden van het vasten dat je bijhoudt.</li>
+        <li>
+          Voortgangsfoto&apos;s, alleen als je die zelf toevoegt. Ze worden uitsluitend op de server van de beheerder
+          opgeslagen, zijn alleen voor jou zichtbaar (ook niet voor andere leden van je huishouden) en worden verwijderd
+          zodra je ze in de app verwijdert. De app krijgt alleen de foto&apos;s die je kiest, geen toegang tot je hele
+          galerij.
+        </li>
         <li>
           Stappen: alleen als je Health Connect koppelt, leest de app je totaal aantal stappen per dag en bewaart dat
           getal op de server. Het verhoogt het calorieëndoel van die dag. De app leest verder niets uit Health Connect,
           schrijft er niets in en deelt stapgegevens met niemand. Je kunt de toestemming altijd intrekken in Health
           Connect.
         </li>
-        <li>Producten, recepten en maaltijden die je zelf aanmaakt of opslaat en producten die je als favoriet markeert.</li>
+        <li>Producten, recepten, maaltijden en portie-eenheden die je zelf aanmaakt of opslaat en producten die je als favoriet markeert.</li>
       </ul>
       <p>De app gebruikt geen advertenties, geen analyse- of trackingdiensten en vraagt geen locatie of contacten op.</p>
 

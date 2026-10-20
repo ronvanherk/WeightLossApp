@@ -48,6 +48,32 @@ describe("dailyTarget", () => {
     expect(small.fiberG).toBe(25);
   });
 
+  it("uses a fixed kcal goal instead of the plan, steps still on top", () => {
+    const t = dailyTarget({ ...base, weeklyLossKg: 0.5, fixedKcal: 1800, steps: 7000 });
+    expect(t.kcal).toBe(1800 + 90); // (7000 - 5000) * 90 * 0.0005
+    expect(t.fixed).toBe(true);
+    expect(dailyTarget({ ...base, weeklyLossKg: 0.5 }).fixed).toBe(false);
+  });
+
+  it("moves kcal from the weekdays to the weekend without changing the week", () => {
+    const plain = dailyTarget({ ...base, weeklyLossKg: 0.5 }).kcal;
+    const day = (weekday: number) => dailyTarget({ ...base, weeklyLossKg: 0.5, weekendExtraKcal: 300, weekday });
+    expect(day(6).kcal).toBe(plain + 300);
+    expect(day(0).weekendKcal).toBe(300);
+    expect(day(3).kcal).toBe(plain - 120);
+    const week = [0, 1, 2, 3, 4, 5, 6].reduce((s, d) => s + day(d).kcal, 0);
+    expect(week).toBe(plain * 7);
+    // No weekday given (the profile screen): no shift.
+    expect(dailyTarget({ ...base, weeklyLossKg: 0.5, weekendExtraKcal: 300 }).kcal).toBe(plain);
+  });
+
+  it("follows the chosen macro split", () => {
+    const t = dailyTarget({ ...base, weeklyLossKg: 0.5, split: { proteinPct: 35, fatPct: 40, carbsPct: 25 } });
+    expect(t.proteinG).toBe(Math.round((1940 * 0.35) / 4));
+    expect(t.carbsG).toBe(Math.round((1940 * 0.25) / 4));
+    expect(t.proteinPct).toBe(35);
+  });
+
   it("splits macros 25/30/45", () => {
     const t = dailyTarget({ ...base, weeklyLossKg: 0.5 });
     expect(t.proteinG * 4 + t.fatG * 9 + t.carbsG * 4).toBeGreaterThan(t.kcal - 10);

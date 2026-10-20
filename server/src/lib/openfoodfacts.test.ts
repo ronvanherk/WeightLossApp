@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { offToFood } from "./openfoodfacts";
+import { offToFood, servingLabel } from "./openfoodfacts";
 import { searchText } from "./foods";
 
 describe("offToFood", () => {
@@ -39,5 +39,22 @@ describe("offToFood", () => {
 describe("searchText", () => {
   it("joins brand and all names, lower-cased", () => {
     expect(searchText({ brand: "Arla", nameDa: "Skyr  Naturel", nameNl: null })).toBe("arla skyr naturel");
+  });
+});
+
+describe("servingLabel", () => {
+  it("keeps the words and drops the amount", () => {
+    expect(servingLabel("1 slice (30 g)")).toBe("1 slice");
+    expect(servingLabel("2 Scheiben (50g)")).toBe("2 Scheiben");
+    expect(servingLabel("1 Portion = 30 g")).toBe("1 Portion");
+    expect(servingLabel("30g (1 stuk)")).toBe("1 stuk");
+    expect(servingLabel("1 glas (250 ml)")).toBe("1 glas");
+  });
+
+  it("is null when the pack only gives an amount", () => {
+    expect(servingLabel("30 g")).toBeNull();
+    expect(servingLabel("250ml")).toBeNull();
+    expect(servingLabel("1,5 dl")).toBeNull();
+    expect(servingLabel(undefined)).toBeNull();
   });
 });

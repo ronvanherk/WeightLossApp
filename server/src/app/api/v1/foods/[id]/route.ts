@@ -25,7 +25,10 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ id: str
   const [food, locale, definitions, favorite] = await Promise.all([
     db.food.findUnique({
       where: { id },
-      include: { ingredients: { include: { ingredient: true }, orderBy: { share: "desc" } } },
+      include: {
+        ingredients: { include: { ingredient: true }, orderBy: { share: "desc" } },
+        units: { orderBy: { grams: "asc" } },
+      },
     }),
     localeOf(userId),
     db.nutrient.findMany({ orderBy: { sortOrder: "asc" } }),
@@ -52,6 +55,8 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ id: str
   return json({
     food: toApi(food, locale),
     favorite: favorite !== null,
+    // Named amounts users added; `mine` may be deleted by this user.
+    units: food.units.map((u) => ({ id: u.id, name: u.name, grams: u.grams, mine: u.createdById === userId })),
     nutrientGroups: groups.filter((g) => g.nutrients.length > 0),
     ingredients: food.ingredients.map((i) => ({
       foodId: i.ingredientId,

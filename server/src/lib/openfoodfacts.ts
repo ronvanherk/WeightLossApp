@@ -13,6 +13,8 @@ export interface OffProduct {
   brands?: string;
   countries_tags?: string[];
   serving_quantity?: number | string;
+  /** Free text from the pack: "1 slice (30 g)", "2 Scheiben (50g)", "30 g". */
+  serving_size?: string;
   nutriments?: Record<string, number | string | undefined>;
   /** Newer format (2026 dumps): `nutriments` is nearly empty and the values live here. */
   nutrition?: { aggregated_set?: { per?: string; nutrients?: Record<string, { value?: number | string }> } };
@@ -25,6 +27,24 @@ function num(v: unknown): number | null {
 }
 
 const clean = (s?: string) => (s && s.trim() ? s.trim() : null);
+
+/** Amounts with a weight or volume unit, as they appear in `serving_size`. */
+const AMOUNT = /\d+(?:[.,]\d+)?\s*(?:g|gr|gram|grams|gramm|kg|ml|cl|dl|l|oz)\b\.?/gi;
+
+/**
+ * What a portion is called, from OFF's `serving_size`: "1 slice (30 g)" -> "1 slice". Null when
+ * it only gives an amount ("30 g"), so the app says "portie" instead.
+ */
+export function servingLabel(size?: string): string | null {
+  if (!size) return null;
+  const label = size
+    .replace(AMOUNT, "")
+    .replace(/[()[\]=:]/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s,.;/-]+|[\s,.;/-]+$/g, "");
+  if (!/\p{L}/u.test(label) || label.length > 40) return null;
+  return label;
+}
 
 /** Per-100 g values in the old `<name>_100g` shape, taken from whichever format the product uses. */
 function per100(p: OffProduct): Record<string, unknown> {
@@ -64,13 +84,14 @@ export function offToFood(p: OffProduct): FoodRow | null {
     sugar: num(n["sugars_100g"]),
     salt: num(n["salt_100g"]),
     servingG: num(p.serving_quantity),
+    servingLabel: num(p.serving_quantity) ? servingLabel(p.serving_size) : null,
     unit: p.nutrition?.aggregated_set?.per === "100ml" ? "ml" : "g",
   };
   if (!row.nameNl && !row.nameDa && !row.nameDe && !row.nameEn) return null;
   return row;
 }
 
-const FIELDS = "code,product_name,product_name_nl,product_name_da,product_name_de,product_name_en,brands,serving_quantity,nutriments,nutrition";
+const FIELDS = "code,product_name,product_name_nl,product_name_da,product_name_de,product_name_en,brands,serving_quantity,serving_size,nutriments,nutrition";
 
 /** Live lookup for a barcode the import does not have (yet). */
 export async function fetchOffProduct(barcode: string): Promise<FoodRow | null> {

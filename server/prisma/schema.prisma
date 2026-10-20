@@ -54,6 +54,9 @@ model User {
   fasts        Fast[]
   steps        DailySteps[]
   savedMeals   SavedMeal[]
+  measurements BodyMeasurement[]
+  photos       ProgressPhoto[]
+  foodUnits    FoodUnit[]
   // Users with the same household id can put meals in each other's diary. Set with user:household.
   householdId  Int?          @map("household_id")
 
@@ -72,6 +75,14 @@ model Profile {
   weeklyLossKg Float         @default(0.5) @map("weekly_loss_kg")
   // UI language and the preferred language for food names: nl, da, de.
   locale       String        @default("nl")
+  // Share of the kcal target per macro, in percent; the three add up to 100.
+  proteinPct   Int           @default(25) @map("protein_pct")
+  fatPct       Int           @default(30) @map("fat_pct")
+  carbsPct     Int           @default(45) @map("carbs_pct")
+  // A kcal goal set by hand (a dietitian's number); null = computed from the plan.
+  fixedKcal    Int?          @map("fixed_kcal")
+  // Extra kcal on Saturday and Sunday, taken from the weekdays so the week stays the same.
+  weekendExtraKcal Int       @default(0) @map("weekend_extra_kcal")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
   @@map("profile")
@@ -98,6 +109,8 @@ model Food {
   saturatedFat Float?      @map("saturated_fat")
   // Typical portion in grams, when the source knows one.
   servingG    Float?       @map("serving_g")
+  // What that portion is called on the pack ("1 slice", "2 Scheiben"); null = just "portie".
+  servingLabel String?     @map("serving_label")
   // "g" or "ml": what the per-100 values are per.
   unit        String       @default("g")
   // Food group: Dutch for NEVO ("Groente"), English for Frida/BLS, "Recept"; null for branded products.
@@ -115,6 +128,7 @@ model Food {
   ingredients FoodIngredient[] @relation("recipe")
   usedIn      FoodIngredient[] @relation("ingredient")
   favoriteOf  Favorite[]
+  units       FoodUnit[]
 
   @@unique([source, sourceId])
   @@index([barcode])
@@ -245,4 +259,52 @@ model SavedMeal {
 
   @@index([userId])
   @@map("saved_meal")
+}
+
+
+// A named amount of a food ("1 boterham" = 35 g), added by a user and offered to everyone.
+model FoodUnit {
+  id          Int      @id @default(autoincrement())
+  foodId      Int      @map("food_id")
+  food        Food     @relation(fields: [foodId], references: [id], onDelete: Cascade)
+  name        String
+  grams       Float
+  createdById Int?     @map("created_by_id")
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([foodId, name])
+  @@map("food_unit")
+}
+
+// Body measurements of a day; every field optional, one row per user and day.
+model BodyMeasurement {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date       DateTime @db.Date
+  waistCm    Float?   @map("waist_cm")
+  hipCm      Float?   @map("hip_cm")
+  chestCm    Float?   @map("chest_cm")
+  thighCm    Float?   @map("thigh_cm")
+  armCm      Float?   @map("arm_cm")
+  neckCm     Float?   @map("neck_cm")
+  bodyFatPct Float?   @map("body_fat_pct")
+
+  @@unique([userId, date])
+  @@map("body_measurement")
+}
+
+// A progress photo; the JPEG lives on the server's disk (PHOTO_DIR), never anywhere else.
+model ProgressPhoto {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  // Path below PHOTO_DIR: "<userId>/<random>.jpg".
+  file      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, date])
+  @@map("progress_photo")
 }

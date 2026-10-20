@@ -33,8 +33,13 @@ services:
       DATABASE_URL: postgresql://weightloss:${POSTGRES_PASSWORD}@db:5432/weightloss
       AUTH_SECRET: ${AUTH_SECRET:?set in .env}
       OFF_USER_AGENT: ${OFF_USER_AGENT:-WeightLossApp/0.1}
+      PHOTO_DIR: /data/photos
+    # Progress photos: on this server only, like the database.
+    volumes:
+      - photos:/data/photos
     ports:
       - "127.0.0.1:3020:3002"
 
 volumes:
   db:
+  photos:

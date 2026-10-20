@@ -24,6 +24,31 @@ export interface TargetInput {
   weeklyLossKg: number;
   /** Synced from the phone; null when unknown. */
   steps?: number | null;
+  /** Share of the kcal per macro in percent, adding up to 100; default 25 / 30 / 45. */
+  split?: MacroSplit;
+  /** A kcal goal set by hand instead of the plan; steps and the weekend still apply. */
+  fixedKcal?: number | null;
+  /** Extra kcal on Saturday and Sunday, taken evenly from the five weekdays. */
+  weekendExtraKcal?: number;
+  /** Day of the week of the target, 0 = Sunday (Date.getUTCDay()); without it no weekend shift. */
+  weekday?: number;
+}
+
+export interface MacroSplit {
+  proteinPct: number;
+  fatPct: number;
+  carbsPct: number;
+}
+
+export const DEFAULT_SPLIT: MacroSplit = { proteinPct: 25, fatPct: 30, carbsPct: 45 };
+
+/**
+ * The weekend shift of one day: +extra on Saturday and Sunday, -2/5 of it on a weekday, so a
+ * week adds up to the same total as without it.
+ */
+export function weekendShift(extra: number, weekday: number | undefined): number {
+  if (!extra || weekday === undefined) return 0;
+  return weekday === 0 || weekday === 6 ? extra : -Math.round((extra * 2) / 5);
 }
 
 export interface DailyTarget {
@@ -38,6 +63,13 @@ export interface DailyTarget {
   steps: number | null;
   /** Extra kcal for steps beyond what the activity level already counts. */
   stepsKcal: number;
+  /** True when the kcal goal is set by hand, not computed. */
+  fixed: boolean;
+  /** What the weekend setting added (or took, on a weekday) today. */
+  weekendKcal: number;
+  proteinPct: number;
+  fatPct: number;
+  carbsPct: number;
   /** At least this much fiber. */
   fiberG: number;
   /** At most this much total sugar, saturated fat and salt. */
@@ -74,19 +106,25 @@ export function dailyTarget(i: TargetInput): DailyTarget {
   const tdee = rest * ACTIVITY_FACTOR[i.activity];
   const losing = i.weightKg > i.goalWeightKg && i.weeklyLossKg > 0;
   const extra = stepsKcal(i.steps, i.weightKg, i.activity);
-  const planned = (losing ? tdee - (i.weeklyLossKg * KCAL_PER_KG) / 7 : tdee) + extra;
+  const base = i.fixedKcal ?? (losing ? tdee - (i.weeklyLossKg * KCAL_PER_KG) / 7 : tdee);
+  const weekend = weekendShift(i.weekendExtraKcal ?? 0, i.weekday);
+  const planned = base + weekend + extra;
   const kcal = Math.max(planned, MIN_KCAL[i.sex]);
-  // Split 25% protein / 30% fat / 45% carbs; 4 / 9 / 4 kcal per gram.
+  // 4 / 9 / 4 kcal per gram of protein / fat / carbs.
+  const split = i.split ?? DEFAULT_SPLIT;
   return {
     bmr: Math.round(rest),
     tdee: Math.round(tdee),
     kcal: Math.round(kcal),
-    proteinG: Math.round((kcal * 0.25) / 4),
-    fatG: Math.round((kcal * 0.3) / 9),
-    carbsG: Math.round((kcal * 0.45) / 4),
+    proteinG: Math.round((kcal * split.proteinPct) / 100 / 4),
+    fatG: Math.round((kcal * split.fatPct) / 100 / 9),
+    carbsG: Math.round((kcal * split.carbsPct) / 100 / 4),
     clamped: planned < MIN_KCAL[i.sex],
     steps: i.steps ?? null,
     stepsKcal: extra,
+    fixed: i.fixedKcal != null,
+    weekendKcal: weekend,
+    ...split,
     // 14 g fiber per 1000 kcal of what the body uses (not of a diet's lower target), 25 g at least.
     fiberG: Math.max(25, Math.round(tdee * 0.014)),
     // Total sugars (fruit and milk included): the EU reference intake, 90 g at 2000 kcal, so 18%.
