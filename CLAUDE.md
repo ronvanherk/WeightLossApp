@@ -44,12 +44,24 @@ android/   Kotlin + Compose app talking to server/ over /api/v1
   member's diary at `factor` times my portion), `household` (GET the other members),
   `meals` (GET saved meals, POST `{name, date, meal}` saves that meal's entries), `meals/[id]`
   (DELETE), `meals/[id]/log` (POST `{date, meal}`),
-  `summary?from=&to=` (per day kcal, macros, water, steps and that day's target; max 366 days). Errors are `{ "error": "..." }` with a status code.
+  `summary?from=&to=` (per day kcal, macros, water, steps and that day's target; max 366 days),
+  `week?date=&today=` (the Monday-Sunday week holding `date` against the week before: averages
+  over logged days, days within target = 70-105% of that day's target, weight as week average
+  against week average, waist, fasts), `measurements` (GET `?from=`, PUT one day as a whole;
+  missing fields are cleared, all empty deletes the day), `photos` (GET list, POST multipart
+  `date` + `photo`, a JPEG of at most 1 MB because nginx allows no more), `photos/[id]` (GET
+  the JPEG, owner only; DELETE), `foods/[id]/units` (POST `{name, grams}`) and
+  `foods/[id]/units/[unitId]` (DELETE, only by whoever added it). `me` takes `?today=` so the
+  weekend shift follows the phone's date. Errors are `{ "error": "..." }` with a status code.
   Another user's diary entry answers 404, not 403.
 - **Targets** (`src/lib/nutrition.ts`): Mifflin-St Jeor BMR x activity factor = TDEE, minus
   `weeklyLossKg x 7700 / 7`. Floor 1500 kcal (men) / 1200 (women); `clamped: true` tells the
   app the floor, not the plan, set the number. Macros split 25% protein / 30% fat / 45% carbs.
   The target uses the latest weight on or before the day; no profile or no weight = `null`.
+  **Own targets** (profile): `proteinPct/fatPct/carbsPct` replace the split (sum 100, a CHECK);
+  `fixedKcal` replaces the computed plan (steps still add, the floor still holds);
+  `weekendExtraKcal` adds that on Saturday and Sunday and takes 2/5 of it from each weekday, so
+  the week total stays the same (`weekendShift()`, by the day's UTC weekday).
   It also carries limits: fiber at least 14 g per 1000 kcal of TDEE (min 25), total sugars at
   most 18% of the target kcal (the EU reference intake, 90 g at 2000), saturated fat under 10%,
   salt 6 g.
@@ -64,6 +76,15 @@ android/   Kotlin + Compose app talking to server/ over /api/v1
 - **Household**: `app_user.household_id`; users with the same value may share meals
   (`pnpm user:household <email> <email>`). Ron and Cindy are household 1 since 2026-10-19; the
   reviewer account has none. Sharing writes into the other diary but never reads it.
+- **Portion units**: `food.serving_label` is the pack's name for `serving_g` ("1 slice"), from
+  OFF's `serving_size` (`servingLabel()`); only new imports and live barcode lookups have it,
+  the 2026-10-18 import does not until OFF is re-imported. `food_unit` holds named amounts users
+  add ("1 boterham" = 35 g), shared like custom products. The app adds rough kitchen measures
+  (spoons, glass, cup) itself. Diary entries still store grams only.
+- **Body measurements** (`body_measurement`, one row per day) and **progress photos**
+  (`progress_photo` + JPEG files under `PHOTO_DIR`, the Docker volume `photos` at
+  `/data/photos`, `<userId>/<uuid>.jpg`). Photos never leave the server and are only served to
+  their owner; deleting a user removes the rows but not the files.
 - **Saved meals** (`saved_meal`, per user): `items` is `[{foodId, grams}]` or quick values;
   logging recomputes from the foods as they are now.
 - **Custom products are shared** between both users (the point: Cindy's lasagne once, used by
@@ -173,6 +194,13 @@ calorie and water bars, history); profile (target card, date picker). Shared pie
   re-arms tomorrow first, then asks the server (diary / weights of today) and only notifies when
   the meal is empty, there is no weight, or water is behind 2 l spread over 08:00-22:00.
   Re-armed on app start and after boot.
+- **Own targets** sit in a "Calorieën en macro's" card in Profile; `ProfileDto` has those fields
+  without defaults on purpose (kotlinx omits default values and the server keeps what it does
+  not get). Product screen: amount × measure (g/ml, the pack's portion, users' units, spoons or
+  glass) and "+ Eenheid". Progress: a week card that opens `WeekScreen`, a measurements card
+  (chips per measure, line chart, waist-to-height) and a photos card (system photo picker, so
+  no permission; `data/Photos.kt` shrinks to 1600 px and under 900 KB). The weekly reminder
+  (`Reminders.Kind.WEEK`) fires on Sunday and opens the week screen via the `open` extra.
 - **Widget** (`widget/DayWidget.kt`, Glance 1.1.1): kcal left today with a bar, water and a
   "+ glas" button; fetches the day itself, refreshed by the app after the diary loads or water
   changes, and every 30 minutes.
@@ -247,13 +275,14 @@ search first.
 Done 2026-10-19 (evening): quick entries, saved meals, sharing a meal within the household,
 reminders, fiber/sugar/saturated fat/salt targets, home screen widget.
 
-1. Exercise sessions from Health Connect (cycling, gym) next to steps.
-2. Own targets: macro split (more protein, low-carb), a higher weekend target, a fixed kcal goal.
-3. Body measurements (waist, hips, body fat) with a chart; optional progress photos on our server.
-4. Weekly review: averages, days within target, weight trend; a Sunday notification.
-5. Portion units ("1 slice", "1 cup") where OFF knows a serving size.
-6. Weight from Health Connect (smart scale); dark mode; CSV/PDF export.
-7. UI strings to `strings.xml` only if someone needs another language (Cindy is Dutch).
+Done 2026-10-20: own targets (split, fixed kcal, weekend), body measurements and progress photos,
+weekly review with a Sunday notification, portion units.
+
+1. Exercise sessions from Health Connect (cycling, gym) next to steps (new Health permission:
+   Play declaration first).
+2. Weight from Health Connect (smart scale); dark mode; CSV/PDF export.
+3. Re-import OFF so existing products get `serving_label` (13 GB dump, server disk ~90%).
+4. UI strings to `strings.xml` only if someone needs another language (Cindy is Dutch).
 
 ## Conventions
 

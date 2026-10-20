@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,6 +42,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,6 +61,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.quantumvikings.weightloss.data.AddEntryRequest
 import com.quantumvikings.weightloss.data.FoodDetailResponse
+import com.quantumvikings.weightloss.data.FoodUnitDto
+import com.quantumvikings.weightloss.data.NewUnitRequest
 import com.quantumvikings.weightloss.data.NutrientGroupDto
 import com.quantumvikings.weightloss.data.Session
 import com.quantumvikings.weightloss.ui.theme.CarbsColor
@@ -85,6 +89,10 @@ fun FoodDetailScreen(
     var chosenMeal by remember { mutableStateOf(meal) }
     var favorite by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var units by remember { mutableStateOf<List<FoodUnitDto>>(emptyList()) }
+    // Which measure the amount is in: BASE (g/ml), SERVING or a unit's key.
+    var measureKey by remember { mutableStateOf(BASE) }
+    var addingUnit by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(foodId) {
@@ -92,7 +100,14 @@ fun FoodDetailScreen(
             .onSuccess {
                 detail = it
                 favorite = it.favorite
-                amount = fmt(initialGrams ?: it.food.servingG ?: 100.0)
+                units = it.units
+                val serving = it.food.servingG
+                if (initialGrams == null && serving != null) {
+                    measureKey = SERVING
+                    amount = "1"
+                } else {
+                    amount = fmt(initialGrams ?: 100.0)
+                }
             }
             .onFailure { error = session.describe(it) }
     }
@@ -108,7 +123,9 @@ fun FoodDetailScreen(
     }
     val food = d.food
     val unit = unitLabel(food.unit)
-    val grams = parseDecimal(amount)?.takeIf { it > 0 && it <= 5000 }
+    val measures = measuresOf(food.unit, food.servingG, food.servingLabel, units)
+    val measure = measures.firstOrNull { it.key == measureKey } ?: measures.first()
+    val grams = parseDecimal(amount)?.let { Math.round(it * measure.grams * 10) / 10.0 }?.takeIf { it > 0 && it <= 5000 }
     val f = (grams ?: 0.0) / 100
     val p = food.per100g
 
@@ -166,36 +183,73 @@ fun FoodDetailScreen(
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
-                // Portion
+                // Portion: an amount in grams, portions or one of the units
                 SectionCard {
                     Text("Hoeveelheid", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(
                         value = amount,
                         onValueChange = { amount = it },
-                        suffix = { Text(unit) },
+                        suffix = { Text(if (measure.key == BASE) unit else "× ${measure.label}") },
                         singleLine = true,
                         isError = amount.isNotEmpty() && grams == null,
+                        supportingText = if (measure.key != BASE && grams != null) {
+                            { Text("= ${fmt(grams)} $unit") }
+                        } else null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(8.dp))
-                    val presets = buildList {
-                        initialGrams?.let { add("Vorige keer" to it) }
-                        food.servingG?.let { add("1 portie" to it); add("½ portie" to it / 2); add("2 porties" to it * 2) }
-                        add("100 $unit" to 100.0)
-                        add("50 $unit" to 50.0)
-                        add("200 $unit" to 200.0)
-                    }.distinctBy { it.second }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                        for ((label, g) in presets) {
+                        for (m in measures) {
                             FilterChip(
-                                selected = grams == g,
-                                onClick = { amount = fmt(Math.round(g * 10) / 10.0) },
-                                label = { Text(if (label.endsWith(unit)) label else "$label (${fmt(Math.round(g * 10) / 10.0)} $unit)") },
+                                selected = m.key == measure.key,
+                                onClick = {
+                                    if (m.key == measure.key) return@FilterChip
+                                    // Grams stay grams; a unit starts at one of it.
+                                    amount = if (m.key == BASE) fmt(grams ?: 100.0) else "1"
+                                    measureKey = m.key
+                                },
+                                label = { Text(if (m.key == BASE) unit else "${m.label} (${fmt(Math.round(m.grams * 10) / 10.0)} $unit)") },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = style.color.copy(alpha = 0.2f)),
                             )
                         }
+                        FilterChip(
+                            selected = false,
+                            onClick = { addingUnit = true },
+                            label = { Text("+ Eenheid") },
+                        )
+                    }
+                    if (measure.key == BASE) {
+                        val quick = buildList {
+                            initialGrams?.let { add("Vorige keer" to it) }
+                            add("50 $unit" to 50.0)
+                            add("100 $unit" to 100.0)
+                            add("200 $unit" to 200.0)
+                        }.distinctBy { it.second }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                            for ((label, g) in quick) {
+                                FilterChip(
+                                    selected = grams == g,
+                                    onClick = { amount = fmt(g) },
+                                    label = { Text(if (label.endsWith(unit)) label else "$label (${fmt(g)} $unit)") },
+                                )
+                            }
+                        }
+                    }
+                    if (measure.unitId != null && measure.mine) {
+                        TextButton(onClick = {
+                            val id = measure.unitId
+                            scope.launch {
+                                runCatching { session.api.deleteUnit(food.id, id) }
+                                    .onSuccess {
+                                        units = units.filter { it.id != id }
+                                        amount = fmt(grams ?: 100.0)
+                                        measureKey = BASE
+                                    }
+                                    .onFailure { error = session.describe(it) }
+                            }
+                        }) { Text("Eenheid \"${measure.label}\" verwijderen", color = MaterialTheme.colorScheme.error) }
                     }
                 }
 
@@ -322,6 +376,82 @@ fun FoodDetailScreen(
             }
         }
     }
+
+    if (addingUnit) {
+        NewUnitDialog(
+            unit = unit,
+            suggestedGrams = grams,
+            onDismiss = { addingUnit = false },
+            onSave = { name, g ->
+                scope.launch {
+                    runCatching { session.api.addUnit(food.id, NewUnitRequest(name, g)) }
+                        .onSuccess { u ->
+                            units = (units + u).sortedBy { it.grams }
+                            measureKey = "unit${u.id}"
+                            amount = "1"
+                            addingUnit = false
+                        }
+                        .onFailure { error = session.describe(it); addingUnit = false }
+                }
+            },
+        )
+    }
+}
+
+private const val BASE = "base"
+private const val SERVING = "serving"
+
+/** A way to measure a food: [grams] for one of it. [unitId] is set for a unit a user added. */
+private data class Measure(val key: String, val label: String, val grams: Double, val unitId: Int? = null, val mine: Boolean = false)
+
+/**
+ * Grams (or ml), the pack's portion, the units users added, and rough kitchen measures. A spoon
+ * weighs differently per food, so those are only a starting point; a unit of your own is exact.
+ */
+private fun measuresOf(unit: String, servingG: Double?, servingLabel: String?, units: List<FoodUnitDto>): List<Measure> = buildList {
+    add(Measure(BASE, unitLabel(unit), 1.0))
+    servingG?.let { add(Measure(SERVING, servingLabel ?: "portie", it)) }
+    for (u in units) add(Measure("unit${u.id}", u.name, u.grams, u.id, u.mine))
+    if (unit == "ml") {
+        add(Measure("glass", "glas", 200.0))
+        add(Measure("cup", "kopje", 150.0))
+    } else {
+        add(Measure("tbsp", "eetlepel", 15.0))
+        add(Measure("tsp", "theelepel", 5.0))
+    }
+}
+
+@Composable
+private fun NewUnitDialog(unit: String, suggestedGrams: Double?, onDismiss: () -> Unit, onSave: (String, Double) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf(suggestedGrams?.let { fmt(it) } ?: "") }
+    val grams = parseDecimal(amount)?.takeIf { it > 0 && it <= 5000 }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Eigen eenheid") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Bijvoorbeeld \"boterham\" of \"handje\". Weeg het één keer; daarna kies je het met één tik. Ook de anderen zien deze eenheid.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(value = name, onValueChange = { name = it.take(40) }, label = { Text("Naam") }, singleLine = true)
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    label = { Text("Weegt") },
+                    suffix = { Text(unit) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = name.isNotBlank() && grams != null, onClick = { onSave(name.trim(), grams!!) }) { Text("Opslaan") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuleren") } },
+    )
 }
 
 /** Share of energy from each macro, with the portion's kcal in the middle. */

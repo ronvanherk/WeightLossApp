@@ -2,6 +2,7 @@ package com.quantumvikings.weightloss.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -54,6 +56,7 @@ import com.quantumvikings.weightloss.data.DaySummaryDto
 import com.quantumvikings.weightloss.data.FastDto
 import com.quantumvikings.weightloss.data.MeResponse
 import com.quantumvikings.weightloss.data.Session
+import com.quantumvikings.weightloss.data.WeekResponse
 import com.quantumvikings.weightloss.data.WeightDto
 import com.quantumvikings.weightloss.ui.theme.Green
 import com.quantumvikings.weightloss.ui.theme.HeaderGradient
@@ -73,11 +76,12 @@ private val SHORT = DateTimeFormatter.ofPattern("d MMM", NL)
 private val RANGES = listOf("1 mnd" to 1L, "3 mnd" to 3L, "6 mnd" to 6L, "1 jaar" to 12L)
 
 @Composable
-fun ProgressScreen(session: Session) {
+fun ProgressScreen(session: Session, onWeek: () -> Unit) {
     var me by remember { mutableStateOf<MeResponse?>(null) }
     var weights by remember { mutableStateOf<List<WeightDto>>(emptyList()) }
     var week by remember { mutableStateOf<List<DaySummaryDto>>(emptyList()) }
     var fasts by remember { mutableStateOf<List<FastDto>>(emptyList()) }
+    var thisWeek by remember { mutableStateOf<WeekResponse?>(null) }
     var months by remember { mutableStateOf(3L) }
     var reload by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf(false) }
@@ -89,6 +93,7 @@ fun ProgressScreen(session: Session) {
         runCatching { session.api.me() }.onSuccess { me = it }.onFailure { error = session.describe(it) }
         runCatching { session.api.summary(today.minusDays(6).toString(), today.toString()) }.onSuccess { week = it.days }
         runCatching { session.api.fasting() }.onSuccess { fasts = it.recent }
+        runCatching { session.api.week(today.toString()) }.onSuccess { thisWeek = it }
     }
     LaunchedEffect(months, reload) {
         runCatching { session.api.weights(today.minusMonths(months).toString()) }
@@ -152,6 +157,24 @@ fun ProgressScreen(session: Session) {
 
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
+            // This week so far; the whole review on its own screen
+            SectionCard(modifier = Modifier.clickable(onClick = onWeek)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Weekoverzicht", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            thisWeek?.let { w ->
+                                if (w.daysLogged == 0) "Deze week nog niets bijgehouden"
+                                else "Deze week ${w.daysOnTarget} van ${w.daysCounted} dagen binnen je doel"
+                            } ?: "Gemiddelden, dagen binnen je doel en je trend",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
 
             // Stats
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -257,6 +280,9 @@ fun ProgressScreen(session: Session) {
                 }
             }
 
+            MeasurementsCard(session, me?.profile?.heightCm)
+            PhotosCard(session)
+
             // History
             if (weights.isNotEmpty()) {
                 SectionCard {
@@ -295,12 +321,12 @@ fun ProgressScreen(session: Session) {
     }
 }
 
-private fun signed(v: Double): String {
+internal fun signed(v: Double): String {
     val r = Math.round(v * 10) / 10.0
     return if (r > 0) "+${fmt(r)}" else fmt(r).replace("-", "−")
 }
 
-private fun dayLetter(date: String) = LocalDate.parse(date).dayOfWeek.getDisplayName(TextStyle.SHORT, NL).take(2)
+internal fun dayLetter(date: String) = LocalDate.parse(date).dayOfWeek.getDisplayName(TextStyle.SHORT, NL).take(2)
 
 @Composable
 private fun StatCard(label: String, value: String?, modifier: Modifier) {
@@ -310,21 +336,24 @@ private fun StatCard(label: String, value: String?, modifier: Modifier) {
     }
 }
 
+@Composable
+private fun WeightChart(weights: List<WeightDto>, goal: Double?) = TrendChart(weights.map { it.date }, weights.map { it.weightKg }, goal)
+
 /** Line with a soft fill below it; the goal as a dashed line when it is in view. */
 @Composable
-private fun WeightChart(weights: List<WeightDto>, goal: Double?) {
+internal fun TrendChart(dates: List<String>, values: List<Double>, goal: Double? = null, margin: Double = 0.5) {
     val line = MaterialTheme.colorScheme.primary
     val goalColor = Orange
     val grid = MaterialTheme.colorScheme.outlineVariant
-    val firstDay = LocalDate.parse(weights.first().date).toEpochDay()
-    val lastDay = LocalDate.parse(weights.last().date).toEpochDay()
-    val values = weights.map { it.weightKg } + listOfNotNull(goal)
-    val min = values.min() - 0.5
-    val max = values.max() + 0.5
+    val firstDay = LocalDate.parse(dates.first()).toEpochDay()
+    val lastDay = LocalDate.parse(dates.last()).toEpochDay()
+    val all = values + listOfNotNull(goal)
+    val min = all.min() - margin
+    val max = all.max() + margin
     Canvas(Modifier.fillMaxWidth().height(180.dp).padding(vertical = 8.dp)) {
         val span = (lastDay - firstDay).coerceAtLeast(1)
         fun x(date: String) = (LocalDate.parse(date).toEpochDay() - firstDay).toFloat() / span * size.width
-        fun y(kg: Double) = ((max - kg) / (max - min)).toFloat() * size.height
+        fun y(v: Double) = ((max - v) / (max - min)).toFloat() * size.height
         for (i in 0..3) {
             val gy = size.height * i / 3
             drawLine(grid, Offset(0f, gy), Offset(size.width, gy), strokeWidth = 1.dp.toPx())
@@ -339,25 +368,25 @@ private fun WeightChart(weights: List<WeightDto>, goal: Double?) {
             )
         }
         val path = Path()
-        weights.forEachIndexed { i, w -> if (i == 0) path.moveTo(x(w.date), y(w.weightKg)) else path.lineTo(x(w.date), y(w.weightKg)) }
+        dates.forEachIndexed { i, d -> if (i == 0) path.moveTo(x(d), y(values[i])) else path.lineTo(x(d), y(values[i])) }
         val fill = Path().apply {
             addPath(path)
-            lineTo(x(weights.last().date), size.height)
-            lineTo(x(weights.first().date), size.height)
+            lineTo(x(dates.last()), size.height)
+            lineTo(x(dates.first()), size.height)
             close()
         }
         drawPath(fill, Brush.verticalGradient(listOf(line.copy(alpha = 0.3f), Color.Transparent)))
         drawPath(path, line, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
-        for (w in weights) {
-            drawCircle(Color.White, 5.dp.toPx(), Offset(x(w.date), y(w.weightKg)))
-            drawCircle(line, 3.5.dp.toPx(), Offset(x(w.date), y(w.weightKg)))
+        dates.forEachIndexed { i, d ->
+            drawCircle(Color.White, 5.dp.toPx(), Offset(x(d), y(values[i])))
+            drawCircle(line, 3.5.dp.toPx(), Offset(x(d), y(values[i])))
         }
     }
 }
 
 /** One bar per day; the target as a small dash above each bar. */
 @Composable
-private fun BarChart(values: List<Double>, targets: List<Double?>, color: Color, labels: List<String>) {
+internal fun BarChart(values: List<Double>, targets: List<Double?>, color: Color, labels: List<String>) {
     val track = MaterialTheme.colorScheme.surfaceVariant
     val targetColor = MaterialTheme.colorScheme.onSurfaceVariant
     val max = (values + targets.filterNotNull()).maxOrNull()?.takeIf { it > 0 } ?: 1.0

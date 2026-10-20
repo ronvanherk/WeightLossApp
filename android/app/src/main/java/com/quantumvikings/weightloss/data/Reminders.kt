@@ -15,15 +15,18 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.DayOfWeek
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 
 /**
  * Daily reminders, each at its own time and only when there is something to remind of: a meal
  * still empty, no weight today, behind on water. The receiver asks the server before it shows
  * anything, so a reminder never nags about what is already logged. Inexact, like the fasting alarm.
+ * The weekly review is the exception: it comes every Sunday once anything was logged that week.
  */
 object Reminders {
     enum class Kind(val label: String, val defaultMinute: Int) {
@@ -32,7 +35,12 @@ object Reminders {
         DINNER("Avondeten", 20 * 60 + 30),
         WEIGHT("Wegen", 8 * 60),
         WATER("Water", 15 * 60),
+        // Weekly, on Sunday; the others are daily.
+        WEEK("Weekoverzicht", 19 * 60),
     }
+
+    /** Extra on the launch intent: which screen to open. */
+    const val EXTRA_OPEN = "open"
 
     private const val PREFS = "reminders"
     private const val EXTRA_KIND = "kind"
@@ -64,7 +72,12 @@ object Reminders {
         val m = minute(context, kind)
         val now = LocalDateTime.now()
         var at = LocalDate.now().atTime(LocalTime.of(m / 60, m % 60))
-        if (!at.isAfter(now)) at = at.plusDays(1)
+        if (kind == Kind.WEEK) {
+            at = at.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY))
+            if (!at.isAfter(now)) at = at.plusWeeks(1)
+        } else if (!at.isAfter(now)) {
+            at = at.plusDays(1)
+        }
         val millis = at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         context.getSystemService(AlarmManager::class.java)
             .setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, millis, pending(context, kind))
@@ -97,6 +110,10 @@ object Reminders {
                     val weights = session.api.weights(from = today).weights
                     if (weights.any { it.date == today }) null else "Goedemorgen! Stap even op de weegschaal."
                 }
+                Kind.WEEK -> {
+                    val w = session.api.week(today, today)
+                    if (w.daysLogged == 0) null else weekMessage(w)
+                }
                 Kind.WATER -> {
                     val ml = session.api.diary(today, today).waterMl
                     val hour = LocalTime.now().hour.coerceIn(DAY_START, DAY_END)
@@ -107,6 +124,20 @@ object Reminders {
             }
         }.getOrNull()
     }
+
+    /** "5 van 7 dagen binnen je doel · gemiddeld 1850 kcal · 0,4 kg lichter" */
+    private fun weekMessage(w: WeekResponse): String = listOfNotNull(
+        "${w.daysOnTarget} van ${w.daysCounted} dagen binnen je doel",
+        w.average.kcal?.let { "gemiddeld $it kcal" },
+        w.weight.change?.let { c ->
+            val kg = String.format(Locale.GERMANY, "%.1f", kotlin.math.abs(c)).removeSuffix(",0")
+            when {
+                c < 0 -> "$kg kg lichter"
+                c > 0 -> "$kg kg zwaarder"
+                else -> "gewicht gelijk"
+            }
+        },
+    ).joinToString(" · ")
 
     /** 1250 -> "1,25", 1000 -> "1". */
     private fun liters(ml: Int) = String.format(Locale.GERMANY, "%.2f", ml / 1000.0).trimEnd('0').trimEnd(',')
@@ -121,7 +152,9 @@ object Reminders {
         val open = PendingIntent.getActivity(
             context,
             100 + kind.ordinal,
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .apply { if (kind == Kind.WEEK) putExtra(EXTRA_OPEN, "week") },
             PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(context, CHANNEL)

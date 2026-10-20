@@ -1,22 +1,29 @@
 package com.quantumvikings.weightloss.data
 
 import kotlinx.serialization.Serializable
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 /** Mirrors server/src/app/api/v1. Field names match the JSON exactly. */
 interface Api {
     @POST("api/v1/login")
     suspend fun login(@Body body: LoginRequest): LoginResponse
 
+    /** [today] is the phone's date, so the weekend part of the target follows the user's clock. */
     @GET("api/v1/me")
-    suspend fun me(): MeResponse
+    suspend fun me(@Query("today") today: String = java.time.LocalDate.now().toString()): MeResponse
 
     @PUT("api/v1/me")
     suspend fun saveProfile(@Body body: ProfileDto): OkResponse
@@ -122,6 +129,36 @@ interface Api {
 
     @DELETE("api/v1/fasting/{id}")
     suspend fun deleteFast(@Path("id") id: Int): OkResponse
+
+    @POST("api/v1/foods/{id}/units")
+    suspend fun addUnit(@Path("id") foodId: Int, @Body body: NewUnitRequest): FoodUnitDto
+
+    @DELETE("api/v1/foods/{id}/units/{unitId}")
+    suspend fun deleteUnit(@Path("id") foodId: Int, @Path("unitId") unitId: Int): OkResponse
+
+    @GET("api/v1/measurements")
+    suspend fun measurements(@Query("from") from: String? = null): MeasurementsResponse
+
+    @PUT("api/v1/measurements")
+    suspend fun saveMeasurement(@Body body: MeasurementDto): OkResponse
+
+    @GET("api/v1/photos")
+    suspend fun photos(): PhotosResponse
+
+    @Multipart
+    @POST("api/v1/photos")
+    suspend fun uploadPhoto(@Part("date") date: RequestBody, @Part photo: MultipartBody.Part): PhotoDto
+
+    @Streaming
+    @GET("api/v1/photos/{id}")
+    suspend fun photo(@Path("id") id: Int): ResponseBody
+
+    @DELETE("api/v1/photos/{id}")
+    suspend fun deletePhoto(@Path("id") id: Int): OkResponse
+
+    /** The Monday-to-Sunday week holding [date], compared with the week before. */
+    @GET("api/v1/week")
+    suspend fun week(@Query("date") date: String, @Query("today") today: String = java.time.LocalDate.now().toString()): WeekResponse
 }
 
 @Serializable data class LoginRequest(val email: String, val password: String)
@@ -139,6 +176,15 @@ data class ProfileDto(
     val goalWeightKg: Double,
     val weeklyLossKg: Double,
     val locale: String,
+    // No defaults: kotlinx leaves out values equal to their default, and the server keeps what it
+    // does not get, so going back to 25/30/45 or switching the fixed goal off must be sent.
+    val proteinPct: Int,
+    val fatPct: Int,
+    val carbsPct: Int,
+    /** A kcal goal set by hand; null = computed from the plan. */
+    val fixedKcal: Int?,
+    /** Extra on Saturday and Sunday, taken from the weekdays. */
+    val weekendExtraKcal: Int,
 )
 
 @Serializable
@@ -153,6 +199,12 @@ data class TargetDto(
     val steps: Int? = null,
     /** Already included in [kcal]. */
     val stepsKcal: Int = 0,
+    val fixed: Boolean = false,
+    /** What the weekend setting added (weekend) or took (weekday) today; included in [kcal]. */
+    val weekendKcal: Int = 0,
+    val proteinPct: Int = 25,
+    val fatPct: Int = 30,
+    val carbsPct: Int = 45,
     /** At least this much fiber; at most this much sugar, saturated fat and salt. */
     val fiberG: Int = 0,
     val sugarMaxG: Int = 0,
@@ -192,6 +244,8 @@ data class FoodDto(
     val brand: String? = null,
     val per100g: Per100Dto,
     val servingG: Double? = null,
+    /** What the pack calls that portion ("1 slice"); null = just a portion. */
+    val servingLabel: String? = null,
     val unit: String = "g",
     val category: String? = null,
     /** Only in the recent list: the amount used last time. */
@@ -275,6 +329,7 @@ data class UpdateEntryRequest(
 data class FoodDetailResponse(
     val food: FoodDto,
     val favorite: Boolean = false,
+    val units: List<FoodUnitDto> = emptyList(),
     val nutrientGroups: List<NutrientGroupDto> = emptyList(),
     val ingredients: List<IngredientDto> = emptyList(),
     val synonyms: List<String> = emptyList(),
@@ -362,3 +417,56 @@ data class ShareRequest(
 @Serializable data class SaveMealRequest(val name: String, val date: String, val meal: String)
 @Serializable data class LogMealRequest(val date: String, val meal: String)
 @Serializable data class AddedResponse(val added: Int)
+
+/** A named amount of a food; [mine] = added by this user, so it may be deleted. */
+@Serializable data class FoodUnitDto(val id: Int, val name: String, val grams: Double, val mine: Boolean = false)
+@Serializable data class NewUnitRequest(val name: String, val grams: Double)
+
+/** One day's body measurements; null = not measured. */
+@Serializable
+data class MeasurementDto(
+    val date: String,
+    val waistCm: Double? = null,
+    val hipCm: Double? = null,
+    val chestCm: Double? = null,
+    val thighCm: Double? = null,
+    val armCm: Double? = null,
+    val neckCm: Double? = null,
+    val bodyFatPct: Double? = null,
+)
+@Serializable data class MeasurementsResponse(val measurements: List<MeasurementDto>)
+
+@Serializable data class PhotoDto(val id: Int, val date: String)
+@Serializable data class PhotosResponse(val photos: List<PhotoDto>)
+
+@Serializable
+data class WeekAverageDto(
+    val kcal: Int? = null,
+    val targetKcal: Int? = null,
+    val protein: Double? = null,
+    val carbs: Double? = null,
+    val fat: Double? = null,
+    val waterMl: Int? = null,
+    val steps: Int? = null,
+)
+@Serializable data class WeekPreviousDto(val kcal: Int? = null, val daysLogged: Int = 0, val daysOnTarget: Int = 0)
+@Serializable data class WeekWeightDto(val average: Double? = null, val previousAverage: Double? = null, val change: Double? = null)
+@Serializable data class WeekWaistDto(val cm: Double? = null, val change: Double? = null)
+@Serializable data class WeekFastingDto(val count: Int = 0, val reached: Int = 0)
+
+@Serializable
+data class WeekResponse(
+    val start: String,
+    val end: String,
+    val days: List<DaySummaryDto>,
+    /** Days up to today; less than 7 while the week is running. */
+    val daysCounted: Int,
+    val daysLogged: Int,
+    /** Between 70% and 105% of that day's target. */
+    val daysOnTarget: Int,
+    val average: WeekAverageDto,
+    val previous: WeekPreviousDto,
+    val weight: WeekWeightDto,
+    val waist: WeekWaistDto,
+    val fasting: WeekFastingDto,
+)

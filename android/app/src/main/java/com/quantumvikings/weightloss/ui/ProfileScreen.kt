@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -90,6 +91,19 @@ private val ACTIVITIES = listOf(
 private val RATES = listOf("0.0" to "Op gewicht blijven", "0.25" to "0,25 kg per week", "0.5" to "0,5 kg per week", "0.75" to "0,75 kg per week", "1.0" to "1 kg per week")
 private val LOCALES = listOf("nl" to "Nederlands", "da" to "Dansk", "de" to "Deutsch")
 
+/** Macro split presets as "protein/fat/carbs" percentages. */
+private const val CUSTOM_SPLIT = "custom"
+private val SPLITS = listOf(
+    "25/30/45" to "Standaard · 25% eiwit, 30% vet, 45% koolh.",
+    "35/30/35" to "Eiwitrijk · 35% eiwit, 30% vet, 35% koolh.",
+    "30/45/25" to "Koolhydraatarm · 30% eiwit, 45% vet, 25% koolh.",
+    "25/65/10" to "Keto · 25% eiwit, 65% vet, 10% koolh.",
+    CUSTOM_SPLIT to "Eigen verdeling",
+)
+private val WEEKENDS = listOf(0, 100, 200, 300, 400, 500).map { extra ->
+    extra.toString() to if (extra == 0) "Elke dag hetzelfde" else "+$extra kcal op za en zo (−${Math.round(extra * 2 / 5.0)} doordeweeks)"
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(session: Session) {
@@ -102,6 +116,13 @@ fun ProfileScreen(session: Session) {
     var goal by remember { mutableStateOf("") }
     var rate by remember { mutableStateOf("0.5") }
     var locale by remember { mutableStateOf("nl") }
+    var split by remember { mutableStateOf("25/30/45") }
+    var proteinPct by remember { mutableStateOf("25") }
+    var fatPct by remember { mutableStateOf("30") }
+    var carbsPct by remember { mutableStateOf("45") }
+    var fixedOn by remember { mutableStateOf(false) }
+    var fixedKcal by remember { mutableStateOf("") }
+    var weekend by remember { mutableStateOf("0") }
     var target by remember { mutableStateOf<TargetDto?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
@@ -120,6 +141,14 @@ fun ProfileScreen(session: Session) {
                 goal = fmt(p.goalWeightKg)
                 rate = RATES.map { it.first }.firstOrNull { it.toDouble() == p.weeklyLossKg } ?: "0.5"
                 locale = p.locale
+                proteinPct = p.proteinPct.toString()
+                fatPct = p.fatPct.toString()
+                carbsPct = p.carbsPct.toString()
+                val key = "${p.proteinPct}/${p.fatPct}/${p.carbsPct}"
+                split = if (SPLITS.any { it.first == key }) key else CUSTOM_SPLIT
+                fixedOn = p.fixedKcal != null
+                fixedKcal = p.fixedKcal?.toString() ?: ""
+                weekend = WEEKENDS.map { it.first }.firstOrNull { it.toInt() == p.weekendExtraKcal } ?: "0"
             }
         }.onFailure { message = session.describe(it) }
     }
@@ -127,7 +156,13 @@ fun ProfileScreen(session: Session) {
     val birth = runCatching { LocalDate.parse(birthDate) }.getOrNull()
     val heightCm = parseDecimal(height)
     val goalKg = parseDecimal(goal)
-    val valid = birth != null && heightCm != null && heightCm in 100.0..250.0 && goalKg != null && goalKg in 30.0..300.0
+    val pcts = listOf(proteinPct, fatPct, carbsPct).map { it.trim().toIntOrNull() }
+    val splitValid = pcts.all { it != null } && pcts.sumOf { it ?: 0 } == 100 &&
+        pcts[0]!! in 10..70 && pcts[1]!! in 10..70 && pcts[2]!! in 5..70
+    val fixed = fixedKcal.trim().toIntOrNull()
+    val fixedValid = !fixedOn || (fixed != null && fixed in 1000..5000)
+    val valid = birth != null && heightCm != null && heightCm in 100.0..250.0 && goalKg != null && goalKg in 30.0..300.0 &&
+        splitValid && fixedValid
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Box(
@@ -162,12 +197,23 @@ fun ProfileScreen(session: Session) {
                         Text(" kcal per dag", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 6.dp))
                     }
                     Text(
-                        "Verbruik ${t.tdee} kcal · in rust ${t.bmr} kcal",
+                        listOfNotNull(
+                            if (t.fixed) "Vast doel" else null,
+                            "Verbruik ${t.tdee} kcal · in rust ${t.bmr} kcal",
+                        ).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (t.weekendKcal != 0) {
+                        Text(
+                            if (t.weekendKcal > 0) "Vandaag ${t.weekendKcal} kcal extra: het is weekend"
+                            else "Vandaag ${-t.weekendKcal} kcal minder, voor het weekend",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                         Pill("Koolh. ${t.carbsG} g", CarbsColor)
                         Pill("Eiwit ${t.proteinG} g", ProteinColor)
                         Pill("Vet ${t.fatG} g", FatColor)
@@ -228,11 +274,70 @@ fun ProfileScreen(session: Session) {
                 Choice("Taal van productnamen", LOCALES, locale) { locale = it }
             }
 
+            SectionCard {
+                Text("Calorieën en macro's", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(10.dp))
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(selected = !fixedOn, onClick = { fixedOn = false }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Berekend") }
+                    SegmentedButton(selected = fixedOn, onClick = { fixedOn = true }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Vast doel") }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (fixedOn) "Bijvoorbeeld het getal van je diëtist. Stappen en het weekend tellen nog mee."
+                    else "Uit je gewicht, lengte, leeftijd, activiteit en tempo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (fixedOn) {
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = fixedKcal,
+                        onValueChange = { fixedKcal = it.filter(Char::isDigit).take(4) },
+                        label = { Text("Dagdoel") },
+                        suffix = { Text("kcal") },
+                        singleLine = true,
+                        isError = !fixedValid,
+                        supportingText = { if (!fixedValid) Text("Tussen 1000 en 5000 kcal") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Choice("Weekend", WEEKENDS, weekend) { weekend = it }
+                Spacer(Modifier.height(10.dp))
+                Choice("Verdeling", SPLITS, split) { choice ->
+                    split = choice
+                    if (choice != CUSTOM_SPLIT) {
+                        val (pr, fa, ca) = choice.split("/")
+                        proteinPct = pr; fatPct = fa; carbsPct = ca
+                    }
+                }
+                if (split == CUSTOM_SPLIT) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PercentField("Eiwit", proteinPct, Modifier.weight(1f)) { proteinPct = it }
+                        PercentField("Vet", fatPct, Modifier.weight(1f)) { fatPct = it }
+                        PercentField("Koolh.", carbsPct, Modifier.weight(1f)) { carbsPct = it }
+                    }
+                    Text(
+                        if (splitValid) "Samen 100% ✓" else "Samen ${pcts.sumOf { it ?: 0 }}%; dat moet 100% zijn (eiwit en vet 10-70%, koolh. 5-70%).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (splitValid) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+
             RemindersCard()
 
             message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             Button(enabled = valid, modifier = Modifier.fillMaxWidth().height(52.dp), onClick = {
-                val profile = ProfileDto(sex, birthDate, heightCm!!, activity, goalKg!!, rate.toDouble(), locale)
+                val profile = ProfileDto(
+                    sex, birthDate, heightCm!!, activity, goalKg!!, rate.toDouble(), locale,
+                    proteinPct = pcts[0]!!, fatPct = pcts[1]!!, carbsPct = pcts[2]!!,
+                    fixedKcal = if (fixedOn) fixed else null,
+                    weekendExtraKcal = weekend.toInt(),
+                )
                 scope.launch {
                     runCatching {
                         session.api.saveProfile(profile)
@@ -281,6 +386,19 @@ private fun NumberField(label: String, value: String, unit: String, onChange: (S
     )
 }
 
+@Composable
+private fun PercentField(label: String, value: String, modifier: Modifier, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { onChange(it.filter(Char::isDigit).take(2)) },
+        label = { Text(label) },
+        suffix = { Text("%") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier,
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Choice(label: String, options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
@@ -308,6 +426,7 @@ private val REMINDER_HINTS = mapOf(
     Reminders.Kind.DINNER to "als je avondeten nog leeg is",
     Reminders.Kind.WEIGHT to "als je vandaag nog niet gewogen bent",
     Reminders.Kind.WATER to "als je achterloopt met water",
+    Reminders.Kind.WEEK to "op zondag: hoe ging je week",
 )
 
 /** Each reminder: on/off and a time. Stored on the phone; the alarms are local. */

@@ -18,6 +18,8 @@ class MainActivity : ComponentActivity() {
         val session = Session(applicationContext)
         // Alarms do not survive a force stop; re-arming is harmless when they did.
         Reminders.restoreAll(applicationContext)
-        setContent { WeightLossApp(session) }
+        // A notification can ask for a screen (the weekly review); read once, not on recreation.
+        val open = if (savedInstanceState == null) intent?.getStringExtra(Reminders.EXTRA_OPEN) else null
+        setContent { WeightLossApp(session, open) }
     }
 }

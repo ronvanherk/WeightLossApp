@@ -17,6 +17,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -46,7 +47,7 @@ private val TABS = listOf(
 )
 
 @Composable
-fun WeightLossApp(session: Session) {
+fun WeightLossApp(session: Session, open: String? = null) {
     WeightLossTheme {
         val token by session.token.collectAsStateWithLifecycle()
         if (token == null) {
@@ -58,6 +59,8 @@ fun WeightLossApp(session: Session) {
         var day by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
         val current by nav.currentBackStackEntryAsState()
         val route = current?.destination?.route
+        // A notification asked for a screen (the Sunday weekly review).
+        LaunchedEffect(open) { if (open == "week") nav.navigate("week") }
 
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
@@ -103,7 +106,8 @@ fun WeightLossApp(session: Session) {
                         onProfile = { nav.navigate("profile") },
                     )
                 }
-                composable("progress") { ProgressScreen(session) }
+                composable("progress") { ProgressScreen(session, onWeek = { nav.navigate("week") }) }
+                composable("week") { WeekScreen(session, onBack = { nav.popBackStack() }) }
                 composable("profile") { ProfileScreen(session) }
                 composable("add/{meal}/{date}") { entry ->
                     val meal = entry.arguments?.getString("meal") ?: "SNACK"
