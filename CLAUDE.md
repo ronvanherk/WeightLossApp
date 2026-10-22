@@ -232,6 +232,9 @@ calorie and water bars, history); profile (target card, date picker). Shared pie
   Reviewer account for Play review: `review@quantumvikings.com` (user 3, demo data only; password
   in `~/Documents/WeightLossApp-keys/README.txt`). Never take store screenshots from Ron's or
   Cindy's account. Tester list in the Console: "WeightLoss testers"; countries NL, DK, DE.
+  Data safety must match what the app collects: since 2026-10-20 that includes progress photos
+  (Photos: collected, not shared, optional, app functionality) and body measurements (health
+  info). Ron saves Console forms himself.
 - Debug builds are `com.quantumvikings.weightloss.debug` ("WeightLoss dev"), signed with the
   committed `app/debug.keystore`, so they install next to the Play version and over each other.
 - When installing, always pass `adb -s <serial>`; a TV box on the LAN also shows up.
@@ -283,6 +286,9 @@ weekly review with a Sunday notification, portion units.
 2. Weight from Health Connect (smart scale); dark mode; CSV/PDF export.
 3. Re-import OFF so existing products get `serving_label` (13 GB dump, server disk ~90%).
 4. UI strings to `strings.xml` only if someone needs another language (Cindy is Dutch).
+5. Photo recognition of a meal: lowest priority, and only on a machine we run (see Privacy).
+
+Deliberately not planned (Ron, 2026-10-19): offline mode, Wear OS, a recipe catalogue.
 
 ## Conventions
 
